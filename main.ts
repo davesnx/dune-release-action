@@ -404,7 +404,7 @@ local: ${config.local}
 
       // Distribute release archive
       core.startGroup('Distributing release archive');
-      this.runDuneRelease('distrib', ['--skip-tests', '--skip-lint']);
+      this.runDuneRelease('distrib', ['--skip-build', '--skip-tests', '--skip-lint']);
       core.endGroup();
 
       // Publish to GitHub (conditional)
