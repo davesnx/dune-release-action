@@ -438,7 +438,7 @@ local: ${config.local}
           core.error(`Failed to change to workspace directory: ${error.message}`);
           throw new Error(`Could not change to workspace directory ${this.context.workspace}: ${error.message}`);
         }
-        this.runDuneRelease('opam', ['submit', '--yes', `--change-log=${changelogPath}`]);
+        this.runDuneRelease('opam', ['submit', '-p', packageName, '--yes', `--change-log=${changelogPath}`]);
         core.endGroup();
       } else {
         core.startGroup('Submitting to opam repository (skipped)');
