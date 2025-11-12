@@ -165,8 +165,9 @@ class ReleaseManager {
       this.exec('git config --global user.name "GitHub Actions"');
       this.exec('git config --global user.email "actions@github.com"');
 
-      // Configure git to use token for SSH-style URLs
+      // Configure git to use token for both HTTPS and SSH URLs
       const gitConfig = `https://x-access-token:${this.context.token}@github.com/`;
+      this.exec(`git config --global url."${gitConfig}".insteadOf "https://github.com/"`);
       this.exec(`git config --global url."${gitConfig}".insteadOf "git@github.com:"`);
 
       this.info('Git configuration completed');
@@ -276,9 +277,10 @@ local: ${config.local}
     const tagName = this.context.ref.replace('refs/tags/', '');
     this.info(`Attempting to delete tag ${tagName}`);
 
-    // Configure git with token
+    // Configure git with token for both HTTPS and SSH URLs
     const gitConfig = `https://x-access-token:${this.context.token}@github.com/`;
     this.exec(`git config --global url."${gitConfig}".insteadOf "https://github.com/"`, { silent: true });
+    this.exec(`git config --global url."${gitConfig}".insteadOf "git@github.com:"`, { silent: true });
 
     // Check if remote tag exists before deleting
     try {
