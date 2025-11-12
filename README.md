@@ -53,7 +53,7 @@ jobs:
       # Add the dune-release-action
       - uses: ./.github/scripts/release
         with:
-          package-name: 'your-package'
+          packages: 'your-package'
           github-token: ${{ secrets.GH_TOKEN }}
 ```
 
@@ -62,7 +62,11 @@ jobs:
 ```yaml
 - uses: ./.github/scripts/release
   with:
-    package-name: 'your-package'          # (required) The package's name to publish to the opam-repository
+    packages: 'your-package'              # (required) The package name(s) to publish to the opam-repository
+    packages: |                           # you can pass multiple packages
+      package-one
+      package-two
+      package-three
     changelog: './CHANGES.md'             # (required) Filename to extract PR descriptions and validate tag
     github-token: ${{ secrets.GH_TOKEN }} # (required) Personal token (classic) with `repo` and `workflow` scopes
     verbose: true                         # Show detailed logs
@@ -76,7 +80,7 @@ jobs:
 
 | Input | Description | Example |
 |-------|-------------|---------|
-| `package-name` | Name of the package to release | `html_of_jsx` |
+| `packages` | Package name(s) to release. Single package as string or multiple as array | `html_of_jsx` or `["pkg1", "pkg2"]` |
 | `github-token` | GitHub token for API access | `${{ secrets.GH_TOKEN }}` |
 
 Your `github-token` secret must have these scopes:

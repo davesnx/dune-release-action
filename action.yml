@@ -6,8 +6,8 @@ branding:
   color: 'orange'
 
 inputs:
-  package-name:
-    description: 'Package name for release'
+  packages:
+    description: 'Package name(s) for release. Can be a single package or multiple packages as array'
     required: true
   changelog:
     description: 'Path to changelog file'

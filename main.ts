@@ -318,7 +318,7 @@ local: ${config.local}
    * Run the full release pipeline
    */
   async runRelease(
-    packageName: string,
+    packages: string,
     changelogPath: string,
     duneConfig: ReleaseConfig,
     toGithubReleases: boolean,
@@ -393,7 +393,7 @@ local: ${config.local}
 
       // Lint opam files
       core.startGroup('Linting opam files');
-      this.runDuneRelease('lint');
+      this.runDuneRelease('lint', ['-p', packages]);
       core.endGroup();
 
       // Setup dune-release config
@@ -404,7 +404,7 @@ local: ${config.local}
 
       // Distribute release archive
       core.startGroup('Distributing release archive');
-      this.runDuneRelease('distrib', ['--skip-build', '--skip-tests', '--skip-lint']);
+      this.runDuneRelease('distrib', ['-p', packages, '--skip-tests', '--skip-lint']);
       core.endGroup();
 
       // Publish to GitHub (conditional)
@@ -422,8 +422,8 @@ local: ${config.local}
       }
 
       // Package opam release (always needed for validation)
-      core.startGroup(`Packaging opam release for ${packageName}`);
-      this.runDuneRelease('opam', ['pkg', '-p', packageName, '--yes', `--change-log=${changelogPath}`]);
+      core.startGroup(`Packaging opam release for ${packages}`);
+      this.runDuneRelease('opam', ['pkg', '-p', packages, '--yes', `--change-log=${changelogPath}`]);
       core.endGroup();
 
       // Submit to opam repository (conditional)
@@ -438,7 +438,7 @@ local: ${config.local}
           core.error(`Failed to change to workspace directory: ${error.message}`);
           throw new Error(`Could not change to workspace directory ${this.context.workspace}: ${error.message}`);
         }
-        this.runDuneRelease('opam', ['submit', '-p', packageName, '--yes', `--change-log=${changelogPath}`]);
+        this.runDuneRelease('opam', ['submit', '-p', packages, '--yes', `--change-log=${changelogPath}`]);
         core.endGroup();
       } else {
         core.startGroup('Submitting to opam repository (skipped)');
@@ -456,7 +456,8 @@ local: ${config.local}
 
       if (toOpamRepository) {
         // Construct the expected opam PR URL
-        const opamBranch = `release-${packageName}-${version}`;
+        // For multi-package releases, join package names with hyphens
+        const opamBranch = `release-${packages.replace(/,/g, '-')}-${version}`;
         const effectiveUser = duneConfig.user;
         const opamPrUrl = `https://github.com/ocaml/opam-repository/compare/master...${effectiveUser}:opam-repository:${opamBranch}`;
 
@@ -535,7 +536,15 @@ local: ${config.local}
 
 async function main() {
   try {
-    const packageName = core.getInput('package-name', { required: true });
+    const packagesInput = core.getInput('packages', { required: true });
+    // Parse packages input - GitHub Actions passes arrays as newline-separated strings
+    const packagesArray = packagesInput
+      .split('\n')
+      .map(pkg => pkg.trim())
+      .filter(pkg => pkg.length > 0);
+    // Join packages with commas for -p flag
+    const packages = packagesArray.join(',');
+
     const changelogPath = core.getInput('changelog') || './CHANGES.md';
     const token = core.getInput('github-token', { required: true });
     const toOpamRepository = core.getInput('to-opam-repository') !== 'false';
@@ -580,7 +589,7 @@ async function main() {
     // Log configuration (only if verbose)
     if (verbose) {
       core.info('=== OCaml Dune Release Action ===');
-      core.info(`Package: ${packageName}`);
+      core.info(`Packages: ${packages}`);
       core.info(`Changelog: ${changelogPath}`);
       core.info(`User: ${effectiveUser}`);
       core.info(`Opam fork: ${opamRepoFork}`);
@@ -591,7 +600,7 @@ async function main() {
 
     // Run the release
     const releaseManager = new ReleaseManager(context, verbose);
-    await releaseManager.runRelease(packageName, changelogPath, duneConfig, toGithubReleases, toOpamRepository);
+    await releaseManager.runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository);
 
     core.setOutput('release-status', 'success');
   } catch (error: any) {
