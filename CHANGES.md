@@ -2,9 +2,8 @@
 
 ## Unreleased
 
-
-
-
+- prevent accumulating blank lines by @davesnx ([#1](https://github.com/davesnx/dune-release-action/pull/1))
+- Format CHANGES by @davesnx ([#1](https://github.com/davesnx/dune-release-action/pull/1))
 - Push commits when there's no pr by @davesnx ([#1](https://github.com/davesnx/dune-release-action/pull/1))
 - fix(update-changelog): fix extra blank line after unreleased header by @davesnx ([#1](https://github.com/davesnx/dune-release-action/pull/1))
 - improve spacing and formatting for our changes.md by @davesnx ([#1](https://github.com/davesnx/dune-release-action/pull/1))
