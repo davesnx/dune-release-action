@@ -30216,20 +30216,27 @@ function addToUnreleased(changelogPath, entries, unreleasedHeader = '## Unreleas
     // Find existing unreleased section
     const unreleasedSection = findUnreleasedSection(content, unreleasedHeader);
     if (unreleasedSection) {
-        // Insert entries after the header
-        const headerContent = content.slice(0, unreleasedSection.headerEnd);
-        const existingContent = content.slice(unreleasedSection.contentStart, unreleasedSection.contentEnd);
-        const afterContent = content.slice(unreleasedSection.contentEnd);
-        // Add new entries after header, preserving existing content
-        const trimmedExisting = existingContent.trim();
-        const entriesBlock = trimmedExisting
-            ? `${formattedEntries}\n${trimmedExisting}`
+        // Get content before the unreleased header (title etc)
+        const beforeHeader = content.slice(0, unreleasedSection.headerStart).trimEnd();
+        // Get existing entries in unreleased section
+        const existingContent = content.slice(unreleasedSection.contentStart, unreleasedSection.contentEnd).trim();
+        // Get content after unreleased section (version sections)
+        const afterContent = content.slice(unreleasedSection.contentEnd).trim();
+        // Build entries block: new entries first, then existing
+        const entriesBlock = existingContent
+            ? `${formattedEntries}\n${existingContent}`
             : formattedEntries;
-        // Ensure blank line before next section (if any)
-        const trimmedAfter = afterContent.trim();
-        const afterSection = trimmedAfter ? `\n\n${trimmedAfter}\n` : '\n';
-        // One blank line after header, then entries
-        content = headerContent + '\n\n' + entriesBlock + afterSection;
+        // Rebuild with consistent spacing:
+        // - blank line after title
+        // - header
+        // - blank line after header
+        // - entries
+        // - blank line before next section
+        const parts = [beforeHeader, '', unreleasedHeader, '', entriesBlock];
+        if (afterContent) {
+            parts.push('', afterContent);
+        }
+        content = parts.join('\n') + '\n';
     }
     else {
         // No unreleased section exists - create one
@@ -30369,15 +30376,25 @@ function addVersionSection(changelogPath, version, date, entries, unreleasedHead
     // Find the unreleased section
     const unreleasedSection = findUnreleasedSection(content, unreleasedHeader);
     if (unreleasedSection) {
-        // Insert after the unreleased section content
-        const beforeUnreleased = content.slice(0, unreleasedSection.contentEnd);
-        const afterUnreleased = content.slice(unreleasedSection.contentEnd);
-        // Build with proper spacing:
-        // - Blank line after unreleased content (before new version header)
-        // - Blank line after version entries (before next section)
-        const trimmedAfter = afterUnreleased.trim();
-        const afterSection = trimmedAfter ? `\n\n${trimmedAfter}\n` : '\n';
-        const newContent = beforeUnreleased.trimEnd() + '\n\n' + versionSection + afterSection;
+        // Get content before unreleased header
+        const beforeHeader = content.slice(0, unreleasedSection.headerStart).trimEnd();
+        // Get unreleased section content
+        const unreleasedContent = content.slice(unreleasedSection.contentStart, unreleasedSection.contentEnd).trim();
+        // Get content after unreleased section (existing versions)
+        const afterUnreleased = content.slice(unreleasedSection.contentEnd).trim();
+        // Rebuild with consistent spacing
+        const parts = [beforeHeader, '', unreleasedHeader];
+        // Add unreleased content if any
+        if (unreleasedContent) {
+            parts.push('', unreleasedContent);
+        }
+        // Add new version section
+        parts.push('', versionSection);
+        // Add existing versions if any
+        if (afterUnreleased) {
+            parts.push('', afterUnreleased);
+        }
+        const newContent = parts.join('\n') + '\n';
         fs_1.default.writeFileSync(changelogPath, newContent, 'utf-8');
     }
     else {
