@@ -200,17 +200,28 @@ export function extractVersionChangelog(
  */
 export interface CommitEntry {
   message: string;
-  author: string;
+  author: string;        // GitHub username (handle)
   prNumber?: number;
+  repoUrl?: string;      // e.g., "https://github.com/owner/repo"
 }
 
 /**
  * Format a commit entry for the changelog
- * Format: "- {message} by {author} (#{prNumber})" or "- {message} by {author}"
+ * Format: "- {message} by @{author} ([#{prNumber}](url))" or "- {message} by @{author}"
  */
 export function formatCommitEntry(entry: CommitEntry): string {
-  const prSuffix = entry.prNumber ? ` (#${entry.prNumber})` : '';
-  return `- ${entry.message} by ${entry.author}${prSuffix}`;
+  const authorDisplay = entry.author.startsWith('@') ? entry.author : `@${entry.author}`;
+
+  let prSuffix = '';
+  if (entry.prNumber) {
+    if (entry.repoUrl) {
+      prSuffix = ` ([#${entry.prNumber}](${entry.repoUrl}/pull/${entry.prNumber}))`;
+    } else {
+      prSuffix = ` (#${entry.prNumber})`;
+    }
+  }
+
+  return `- ${entry.message} by ${authorDisplay}${prSuffix}`;
 }
 
 /**

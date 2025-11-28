@@ -16,7 +16,8 @@ import {
 interface CommitInfo {
   sha: string;
   message: string;
-  author: string;
+  author: string;         // Git author name (from git log)
+  authorHandle?: string;  // GitHub username
   prNumber?: number;
 }
 
@@ -139,7 +140,7 @@ function getCommitsSince(ref: string | null): CommitInfo[] {
 }
 
 /**
- * Try to find the PR number associated with a commit
+ * Try to find the PR number and author handle associated with a commit
  */
 async function enrichCommitWithPR(
   octokit: ReturnType<typeof github.getOctokit>,
@@ -147,29 +148,53 @@ async function enrichCommitWithPR(
   repo: string,
   commit: CommitInfo
 ): Promise<CommitInfo> {
+  let enriched = { ...commit };
+
   try {
     // Check if the commit message already has a PR reference like "(#123)"
     const prMatch = commit.message.match(/\(#(\d+)\)$/);
     if (prMatch) {
-      return { ...commit, prNumber: parseInt(prMatch[1], 10) };
+      enriched.prNumber = parseInt(prMatch[1], 10);
     }
 
     // Try to find associated PRs via GitHub API
-    const { data: prs } = await octokit.rest.repos.listPullRequestsAssociatedWithCommit({
-      owner,
-      repo,
-      commit_sha: commit.sha
-    });
+    if (!enriched.prNumber) {
+      const { data: prs } = await octokit.rest.repos.listPullRequestsAssociatedWithCommit({
+        owner,
+        repo,
+        commit_sha: commit.sha
+      });
 
-    if (prs.length > 0) {
-      // Use the first (most likely the merged) PR
-      return { ...commit, prNumber: prs[0].number };
+      if (prs.length > 0) {
+        // Use the first (most likely the merged) PR
+        enriched.prNumber = prs[0].number;
+        // Get author handle from PR
+        if (prs[0].user?.login) {
+          enriched.authorHandle = prs[0].user.login;
+        }
+      }
+    }
+
+    // If we still don't have the author handle, try to get it from the commit
+    if (!enriched.authorHandle) {
+      try {
+        const { data: commitData } = await octokit.rest.repos.getCommit({
+          owner,
+          repo,
+          ref: commit.sha
+        });
+        if (commitData.author?.login) {
+          enriched.authorHandle = commitData.author.login;
+        }
+      } catch {
+        // Ignore - we'll fall back to git author name
+      }
     }
   } catch (error: any) {
-    core.debug(`Could not find PR for commit ${commit.sha}: ${error.message}`);
+    core.debug(`Could not enrich commit ${commit.sha}: ${error.message}`);
   }
 
-  return commit;
+  return enriched;
 }
 
 /**
@@ -196,14 +221,15 @@ function filterCommits(commits: CommitInfo[], changelogPath: string): CommitInfo
 /**
  * Convert CommitInfo to CommitEntry for the changelog
  */
-function toCommitEntry(commit: CommitInfo): CommitEntry {
+function toCommitEntry(commit: CommitInfo, repoUrl: string): CommitEntry {
   // Clean up the message - remove PR reference if present (we'll add it back formatted)
   const cleanMessage = commit.message.replace(/\s*\(#\d+\)$/, '').trim();
 
   return {
     message: cleanMessage,
-    author: commit.author,
-    prNumber: commit.prNumber
+    author: commit.authorHandle || commit.author,  // Prefer GitHub handle
+    prNumber: commit.prNumber,
+    repoUrl
   };
 }
 
@@ -284,6 +310,7 @@ async function backfillChangelog(
   changelogPath: string,
   unreleasedHeader: string
 ): Promise<number> {
+  const repoUrl = `https://github.com/${owner}/${repo}`;
   const allTags = getAllTags();
 
   if (allTags.length === 0) {
@@ -318,13 +345,13 @@ async function backfillChangelog(
     // Filter merge commits
     const filteredCommits = commits.filter(c => !c.message.startsWith('Merge '));
 
-    // Enrich with PR numbers
+    // Enrich with PR numbers and author handles
     const enrichedCommits = await Promise.all(
       filteredCommits.map(commit => enrichCommitWithPR(octokit, owner, repo, commit))
     );
 
-    // Convert to entries
-    const entries = enrichedCommits.map(toCommitEntry);
+    // Convert to entries with repo URL for PR links
+    const entries = enrichedCommits.map(c => toCommitEntry(c, repoUrl));
 
     // Get the tag date
     const date = getTagDate(tag);
@@ -377,20 +404,21 @@ async function handleMainPush(
     return;
   }
 
-  // Enrich commits with PR numbers
+  // Enrich commits with PR numbers and author handles
   core.info('Looking up PR numbers for commits...');
   const enrichedCommits = await Promise.all(
     newCommits.map(commit => enrichCommitWithPR(octokit, owner, repo, commit))
   );
 
-  // Convert to changelog entries
-  const entries = enrichedCommits.map(toCommitEntry);
+  // Convert to changelog entries with repo URL for PR links
+  const repoUrl = `https://github.com/${owner}/${repo}`;
+  const entries = enrichedCommits.map(c => toCommitEntry(c, repoUrl));
 
   // Log what we're adding
   core.info(`Adding ${entries.length} entries to changelog:`);
   entries.forEach(entry => {
     const prSuffix = entry.prNumber ? ` (#${entry.prNumber})` : '';
-    core.info(`  - ${entry.message} by ${entry.author}${prSuffix}`);
+    core.info(`  - ${entry.message} by @${entry.author}${prSuffix}`);
   });
 
   // Add to changelog

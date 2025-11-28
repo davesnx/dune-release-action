@@ -30122,11 +30122,20 @@ function extractVersionChangelog(changelogPath, version, outputPath) {
 }
 /**
  * Format a commit entry for the changelog
- * Format: "- {message} by {author} (#{prNumber})" or "- {message} by {author}"
+ * Format: "- {message} by @{author} ([#{prNumber}](url))" or "- {message} by @{author}"
  */
 function formatCommitEntry(entry) {
-    const prSuffix = entry.prNumber ? ` (#${entry.prNumber})` : '';
-    return `- ${entry.message} by ${entry.author}${prSuffix}`;
+    const authorDisplay = entry.author.startsWith('@') ? entry.author : `@${entry.author}`;
+    let prSuffix = '';
+    if (entry.prNumber) {
+        if (entry.repoUrl) {
+            prSuffix = ` ([#${entry.prNumber}](${entry.repoUrl}/pull/${entry.prNumber}))`;
+        }
+        else {
+            prSuffix = ` (#${entry.prNumber})`;
+        }
+    }
+    return `- ${entry.message} by ${authorDisplay}${prSuffix}`;
 }
 /**
  * Check if an entry (by message) already exists in the changelog
@@ -30530,30 +30539,53 @@ function getCommitsSince(ref) {
     }
 }
 /**
- * Try to find the PR number associated with a commit
+ * Try to find the PR number and author handle associated with a commit
  */
 async function enrichCommitWithPR(octokit, owner, repo, commit) {
+    let enriched = { ...commit };
     try {
         // Check if the commit message already has a PR reference like "(#123)"
         const prMatch = commit.message.match(/\(#(\d+)\)$/);
         if (prMatch) {
-            return { ...commit, prNumber: parseInt(prMatch[1], 10) };
+            enriched.prNumber = parseInt(prMatch[1], 10);
         }
         // Try to find associated PRs via GitHub API
-        const { data: prs } = await octokit.rest.repos.listPullRequestsAssociatedWithCommit({
-            owner,
-            repo,
-            commit_sha: commit.sha
-        });
-        if (prs.length > 0) {
-            // Use the first (most likely the merged) PR
-            return { ...commit, prNumber: prs[0].number };
+        if (!enriched.prNumber) {
+            const { data: prs } = await octokit.rest.repos.listPullRequestsAssociatedWithCommit({
+                owner,
+                repo,
+                commit_sha: commit.sha
+            });
+            if (prs.length > 0) {
+                // Use the first (most likely the merged) PR
+                enriched.prNumber = prs[0].number;
+                // Get author handle from PR
+                if (prs[0].user?.login) {
+                    enriched.authorHandle = prs[0].user.login;
+                }
+            }
+        }
+        // If we still don't have the author handle, try to get it from the commit
+        if (!enriched.authorHandle) {
+            try {
+                const { data: commitData } = await octokit.rest.repos.getCommit({
+                    owner,
+                    repo,
+                    ref: commit.sha
+                });
+                if (commitData.author?.login) {
+                    enriched.authorHandle = commitData.author.login;
+                }
+            }
+            catch {
+                // Ignore - we'll fall back to git author name
+            }
         }
     }
     catch (error) {
-        core.debug(`Could not find PR for commit ${commit.sha}: ${error.message}`);
+        core.debug(`Could not enrich commit ${commit.sha}: ${error.message}`);
     }
-    return commit;
+    return enriched;
 }
 /**
  * Filter commits to exclude merge commits and already-added entries
@@ -30576,13 +30608,14 @@ function filterCommits(commits, changelogPath) {
 /**
  * Convert CommitInfo to CommitEntry for the changelog
  */
-function toCommitEntry(commit) {
+function toCommitEntry(commit, repoUrl) {
     // Clean up the message - remove PR reference if present (we'll add it back formatted)
     const cleanMessage = commit.message.replace(/\s*\(#\d+\)$/, '').trim();
     return {
         message: cleanMessage,
-        author: commit.author,
-        prNumber: commit.prNumber
+        author: commit.authorHandle || commit.author, // Prefer GitHub handle
+        prNumber: commit.prNumber,
+        repoUrl
     };
 }
 /**
@@ -30646,6 +30679,7 @@ function commitAndPush(changelogPath, message) {
  * Backfill changelog with entries for tags that don't have version sections
  */
 async function backfillChangelog(octokit, owner, repo, changelogPath, unreleasedHeader) {
+    const repoUrl = `https://github.com/${owner}/${repo}`;
     const allTags = getAllTags();
     if (allTags.length === 0) {
         core.info('No tags found - nothing to backfill');
@@ -30670,10 +30704,10 @@ async function backfillChangelog(octokit, owner, repo, changelogPath, unreleased
         core.info(`  Found ${commits.length} commits`);
         // Filter merge commits
         const filteredCommits = commits.filter(c => !c.message.startsWith('Merge '));
-        // Enrich with PR numbers
+        // Enrich with PR numbers and author handles
         const enrichedCommits = await Promise.all(filteredCommits.map(commit => enrichCommitWithPR(octokit, owner, repo, commit)));
-        // Convert to entries
-        const entries = enrichedCommits.map(toCommitEntry);
+        // Convert to entries with repo URL for PR links
+        const entries = enrichedCommits.map(c => toCommitEntry(c, repoUrl));
         // Get the tag date
         const date = getTagDate(tag);
         // Add version section
@@ -30709,16 +30743,17 @@ async function handleMainPush(octokit, owner, repo, changelogPath, unreleasedHea
         core.info('All commits are already in the changelog');
         return;
     }
-    // Enrich commits with PR numbers
+    // Enrich commits with PR numbers and author handles
     core.info('Looking up PR numbers for commits...');
     const enrichedCommits = await Promise.all(newCommits.map(commit => enrichCommitWithPR(octokit, owner, repo, commit)));
-    // Convert to changelog entries
-    const entries = enrichedCommits.map(toCommitEntry);
+    // Convert to changelog entries with repo URL for PR links
+    const repoUrl = `https://github.com/${owner}/${repo}`;
+    const entries = enrichedCommits.map(c => toCommitEntry(c, repoUrl));
     // Log what we're adding
     core.info(`Adding ${entries.length} entries to changelog:`);
     entries.forEach(entry => {
         const prSuffix = entry.prNumber ? ` (#${entry.prNumber})` : '';
-        core.info(`  - ${entry.message} by ${entry.author}${prSuffix}`);
+        core.info(`  - ${entry.message} by @${entry.author}${prSuffix}`);
     });
     // Add to changelog
     (0, changelog_1.addToUnreleased)(changelogPath, entries, unreleasedHeader);

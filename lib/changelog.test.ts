@@ -299,16 +299,33 @@ describe('extractVersionChangelog', () => {
 });
 
 describe('formatCommitEntry', () => {
-  test('formats entry with PR number', () => {
+  test('formats entry with PR number and repo URL', () => {
+    const entry = {
+      message: 'Add new feature',
+      author: 'davesnx',
+      prNumber: 123,
+      repoUrl: 'https://github.com/davesnx/dune-release-action'
+    };
+    const formatted = formatCommitEntry(entry);
+    assert.strictEqual(formatted, '- Add new feature by @davesnx ([#123](https://github.com/davesnx/dune-release-action/pull/123))');
+  });
+
+  test('formats entry with PR number but no repo URL', () => {
     const entry = { message: 'Add new feature', author: 'davesnx', prNumber: 123 };
     const formatted = formatCommitEntry(entry);
-    assert.strictEqual(formatted, '- Add new feature by davesnx (#123)');
+    assert.strictEqual(formatted, '- Add new feature by @davesnx (#123)');
   });
 
   test('formats entry without PR number', () => {
     const entry = { message: 'Fix bug', author: 'davesnx' };
     const formatted = formatCommitEntry(entry);
-    assert.strictEqual(formatted, '- Fix bug by davesnx');
+    assert.strictEqual(formatted, '- Fix bug by @davesnx');
+  });
+
+  test('handles author already having @ prefix', () => {
+    const entry = { message: 'Fix bug', author: '@davesnx' };
+    const formatted = formatCommitEntry(entry);
+    assert.strictEqual(formatted, '- Fix bug by @davesnx');
   });
 });
 
@@ -364,7 +381,7 @@ describe('addToUnreleased', () => {
     ]);
 
     const result = Fs.readFileSync(testFile, 'utf-8');
-    assert.ok(result.includes('- New feature by davesnx (#42)'));
+    assert.ok(result.includes('- New feature by @davesnx (#42)'));
     assert.ok(result.includes('- Existing entry'));
     assert.ok(result.includes('## v1.0.0'));
 
@@ -387,7 +404,7 @@ describe('addToUnreleased', () => {
 
     const result = Fs.readFileSync(testFile, 'utf-8');
     assert.ok(result.includes('## Unreleased'));
-    assert.ok(result.includes('- New feature by davesnx'));
+    assert.ok(result.includes('- New feature by @davesnx'));
 
     Fs.unlinkSync(testFile);
   });
@@ -408,7 +425,7 @@ describe('addToUnreleased', () => {
     const result = Fs.readFileSync(testFile, 'utf-8');
     assert.ok(result.includes('# Changelog'));
     assert.ok(result.includes('## Unreleased'));
-    assert.ok(result.includes('- Initial feature by davesnx (#1)'));
+    assert.ok(result.includes('- Initial feature by @davesnx (#1)'));
 
     Fs.unlinkSync(testFile);
   });

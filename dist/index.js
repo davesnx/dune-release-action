@@ -30122,11 +30122,20 @@ function extractVersionChangelog(changelogPath, version, outputPath) {
 }
 /**
  * Format a commit entry for the changelog
- * Format: "- {message} by {author} (#{prNumber})" or "- {message} by {author}"
+ * Format: "- {message} by @{author} ([#{prNumber}](url))" or "- {message} by @{author}"
  */
 function formatCommitEntry(entry) {
-    const prSuffix = entry.prNumber ? ` (#${entry.prNumber})` : '';
-    return `- ${entry.message} by ${entry.author}${prSuffix}`;
+    const authorDisplay = entry.author.startsWith('@') ? entry.author : `@${entry.author}`;
+    let prSuffix = '';
+    if (entry.prNumber) {
+        if (entry.repoUrl) {
+            prSuffix = ` ([#${entry.prNumber}](${entry.repoUrl}/pull/${entry.prNumber}))`;
+        }
+        else {
+            prSuffix = ` (#${entry.prNumber})`;
+        }
+    }
+    return `- ${entry.message} by ${authorDisplay}${prSuffix}`;
 }
 /**
  * Check if an entry (by message) already exists in the changelog
