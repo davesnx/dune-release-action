@@ -29973,6 +29973,9 @@ exports.isEntryInChangelog = isEntryInChangelog;
 exports.addToUnreleased = addToUnreleased;
 exports.promoteUnreleasedToVersion = promoteUnreleasedToVersion;
 exports.getUnreleasedContent = getUnreleasedContent;
+exports.hasVersion = hasVersion;
+exports.getVersions = getVersions;
+exports.addVersionSection = addVersionSection;
 const core = __importStar(__nccwpck_require__(7484));
 const fs_1 = __importDefault(__nccwpck_require__(9896));
 /**
@@ -30285,6 +30288,79 @@ function getUnreleasedContent(changelogPath, unreleasedHeader = '## Unreleased')
     }
     return content.slice(unreleasedSection.contentStart, unreleasedSection.contentEnd).trim();
 }
+/**
+ * Check if a version exists in the changelog
+ */
+function hasVersion(changelogPath, version) {
+    try {
+        const entries = parseChangelog(changelogPath);
+        const normalizedVersion = version.replace(/^v/, '');
+        return entries.some(e => e.version === normalizedVersion ||
+            e.version === `v${normalizedVersion}` ||
+            e.version === version);
+    }
+    catch {
+        return false;
+    }
+}
+/**
+ * Get all versions in the changelog
+ */
+function getVersions(changelogPath) {
+    try {
+        const entries = parseChangelog(changelogPath);
+        return entries
+            .filter(e => e.version !== 'unreleased')
+            .map(e => e.version);
+    }
+    catch {
+        return [];
+    }
+}
+/**
+ * Add a version section to the changelog (for backfilling)
+ * Inserts the version in chronological order (newer versions at top)
+ */
+function addVersionSection(changelogPath, version, date, entries, unreleasedHeader = '## Unreleased') {
+    let content = readChangelogContent(changelogPath);
+    const normalizedVersion = version.startsWith('v') ? version : `v${version}`;
+    const versionHeader = `## ${normalizedVersion} (${date})`;
+    const formattedEntries = entries.length > 0
+        ? entries.map(formatCommitEntry).join('\n')
+        : '- Initial release';
+    const versionSection = `${versionHeader}\n\n${formattedEntries}`;
+    if (!content.trim()) {
+        // Empty file - create with title, unreleased, and version
+        content = `# Changelog\n\n${unreleasedHeader}\n\n${versionSection}\n`;
+        fs_1.default.writeFileSync(changelogPath, content, 'utf-8');
+        return;
+    }
+    // Find the unreleased section
+    const unreleasedSection = findUnreleasedSection(content, unreleasedHeader);
+    if (unreleasedSection) {
+        // Insert after the unreleased section content
+        const beforeUnreleased = content.slice(0, unreleasedSection.contentEnd);
+        const afterUnreleased = content.slice(unreleasedSection.contentEnd);
+        // Check if we need to insert in order (find the right position)
+        // For now, just insert right after unreleased
+        const newContent = beforeUnreleased.trimEnd() + '\n\n' + versionSection + '\n' + afterUnreleased.trimStart();
+        fs_1.default.writeFileSync(changelogPath, newContent, 'utf-8');
+    }
+    else {
+        // No unreleased section - check for title
+        const titleMatch = content.match(/^#\s+[^\n]+\n/);
+        if (titleMatch) {
+            const afterTitle = titleMatch[0].length;
+            const newContent = content.slice(0, afterTitle) + '\n' + unreleasedHeader + '\n\n' + versionSection + '\n' + content.slice(afterTitle);
+            fs_1.default.writeFileSync(changelogPath, newContent, 'utf-8');
+        }
+        else {
+            // No title - prepend everything
+            content = `# Changelog\n\n${unreleasedHeader}\n\n${versionSection}\n\n${content}`;
+            fs_1.default.writeFileSync(changelogPath, content, 'utf-8');
+        }
+    }
+}
 
 
 /***/ }),
@@ -30329,11 +30405,14 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.getLatestTag = getLatestTag;
+exports.getAllTags = getAllTags;
 exports.getCommitsSince = getCommitsSince;
+exports.getCommitsBetween = getCommitsBetween;
 exports.filterCommits = filterCommits;
 exports.toCommitEntry = toCommitEntry;
 exports.isTagPush = isTagPush;
 exports.getTagName = getTagName;
+exports.backfillChangelog = backfillChangelog;
 const core = __importStar(__nccwpck_require__(7484));
 const github = __importStar(__nccwpck_require__(3228));
 const child_process_1 = __nccwpck_require__(5317);
@@ -30367,6 +30446,62 @@ function getLatestTag() {
     catch {
         // No tags exist yet
         return null;
+    }
+}
+/**
+ * Get all tags sorted by version (oldest first)
+ */
+function getAllTags() {
+    try {
+        const output = exec('git tag --sort=version:refname', { silent: true });
+        if (!output) {
+            return [];
+        }
+        return output.split('\n').filter(tag => tag.trim());
+    }
+    catch {
+        return [];
+    }
+}
+/**
+ * Get the date of a tag in YYYY-MM-DD format
+ */
+function getTagDate(tag) {
+    try {
+        // Get the commit date of the tag
+        const date = exec(`git log -1 --format=%ci ${tag}`, { silent: true });
+        if (date) {
+            // Extract YYYY-MM-DD from the date string
+            return date.split(' ')[0];
+        }
+    }
+    catch {
+        // Fall through to default
+    }
+    return getCurrentDate();
+}
+/**
+ * Get commits between two refs (exclusive of fromRef, inclusive of toRef)
+ */
+function getCommitsBetween(fromRef, toRef) {
+    const format = '%H|%s|%an';
+    const range = fromRef ? `${fromRef}..${toRef}` : toRef;
+    try {
+        const output = exec(`git log ${range} --format="${format}"`, { silent: true });
+        if (!output) {
+            return [];
+        }
+        return output.split('\n').filter(line => line.trim()).map(line => {
+            const [sha, message, author] = line.split('|');
+            return {
+                sha: sha.trim(),
+                message: message.trim(),
+                author: author.trim()
+            };
+        });
+    }
+    catch {
+        return [];
     }
 }
 /**
@@ -30508,10 +30643,55 @@ function commitAndPush(changelogPath, message) {
     core.info(`Committed and pushed changes to ${branch}`);
 }
 /**
+ * Backfill changelog with entries for tags that don't have version sections
+ */
+async function backfillChangelog(octokit, owner, repo, changelogPath, unreleasedHeader) {
+    const allTags = getAllTags();
+    if (allTags.length === 0) {
+        core.info('No tags found - nothing to backfill');
+        return 0;
+    }
+    core.info(`Found ${allTags.length} tags: ${allTags.join(', ')}`);
+    // Find tags without changelog entries
+    const missingTags = allTags.filter(tag => !(0, changelog_1.hasVersion)(changelogPath, tag));
+    if (missingTags.length === 0) {
+        core.info('All tags have changelog entries - no backfill needed');
+        return 0;
+    }
+    core.info(`Backfilling ${missingTags.length} missing tags: ${missingTags.join(', ')}`);
+    // Process tags in order (oldest first) so they appear correctly in changelog
+    for (let i = 0; i < missingTags.length; i++) {
+        const tag = missingTags[i];
+        const tagIndex = allTags.indexOf(tag);
+        const previousTag = tagIndex > 0 ? allTags[tagIndex - 1] : null;
+        core.info(`\nProcessing ${tag} (previous: ${previousTag || 'none'})`);
+        // Get commits for this tag
+        const commits = getCommitsBetween(previousTag, tag);
+        core.info(`  Found ${commits.length} commits`);
+        // Filter merge commits
+        const filteredCommits = commits.filter(c => !c.message.startsWith('Merge '));
+        // Enrich with PR numbers
+        const enrichedCommits = await Promise.all(filteredCommits.map(commit => enrichCommitWithPR(octokit, owner, repo, commit)));
+        // Convert to entries
+        const entries = enrichedCommits.map(toCommitEntry);
+        // Get the tag date
+        const date = getTagDate(tag);
+        // Add version section
+        (0, changelog_1.addVersionSection)(changelogPath, tag, date, entries, unreleasedHeader);
+        core.info(`  Added ${tag} (${date}) with ${entries.length} entries`);
+    }
+    return missingTags.length;
+}
+/**
  * Handle push to main branch - add new commits to Unreleased section
  */
 async function handleMainPush(octokit, owner, repo, changelogPath, unreleasedHeader) {
     core.info('Handling push to main branch');
+    // First, check if we need to backfill missing tags
+    const backfilledCount = await backfillChangelog(octokit, owner, repo, changelogPath, unreleasedHeader);
+    if (backfilledCount > 0) {
+        core.info(`\nBackfilled ${backfilledCount} version(s)`);
+    }
     // Get the latest tag
     const latestTag = getLatestTag();
     core.info(latestTag ? `Latest tag: ${latestTag}` : 'No existing tags found');

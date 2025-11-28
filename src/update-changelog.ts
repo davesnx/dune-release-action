@@ -8,7 +8,9 @@ import {
   promoteUnreleasedToVersion,
   isEntryInChangelog,
   CommitEntry,
-  getUnreleasedContent
+  getUnreleasedContent,
+  hasVersion,
+  addVersionSection
 } from '../lib/changelog';
 
 interface CommitInfo {
@@ -46,6 +48,65 @@ function getLatestTag(): string | null {
   } catch {
     // No tags exist yet
     return null;
+  }
+}
+
+/**
+ * Get all tags sorted by version (oldest first)
+ */
+function getAllTags(): string[] {
+  try {
+    const output = exec('git tag --sort=version:refname', { silent: true });
+    if (!output) {
+      return [];
+    }
+    return output.split('\n').filter(tag => tag.trim());
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Get the date of a tag in YYYY-MM-DD format
+ */
+function getTagDate(tag: string): string {
+  try {
+    // Get the commit date of the tag
+    const date = exec(`git log -1 --format=%ci ${tag}`, { silent: true });
+    if (date) {
+      // Extract YYYY-MM-DD from the date string
+      return date.split(' ')[0];
+    }
+  } catch {
+    // Fall through to default
+  }
+  return getCurrentDate();
+}
+
+/**
+ * Get commits between two refs (exclusive of fromRef, inclusive of toRef)
+ */
+function getCommitsBetween(fromRef: string | null, toRef: string): CommitInfo[] {
+  const format = '%H|%s|%an';
+  const range = fromRef ? `${fromRef}..${toRef}` : toRef;
+
+  try {
+    const output = exec(`git log ${range} --format="${format}"`, { silent: true });
+
+    if (!output) {
+      return [];
+    }
+
+    return output.split('\n').filter(line => line.trim()).map(line => {
+      const [sha, message, author] = line.split('|');
+      return {
+        sha: sha.trim(),
+        message: message.trim(),
+        author: author.trim()
+      };
+    });
+  } catch {
+    return [];
   }
 }
 
@@ -214,6 +275,69 @@ function commitAndPush(changelogPath: string, message: string): void {
 }
 
 /**
+ * Backfill changelog with entries for tags that don't have version sections
+ */
+async function backfillChangelog(
+  octokit: ReturnType<typeof github.getOctokit>,
+  owner: string,
+  repo: string,
+  changelogPath: string,
+  unreleasedHeader: string
+): Promise<number> {
+  const allTags = getAllTags();
+
+  if (allTags.length === 0) {
+    core.info('No tags found - nothing to backfill');
+    return 0;
+  }
+
+  core.info(`Found ${allTags.length} tags: ${allTags.join(', ')}`);
+
+  // Find tags without changelog entries
+  const missingTags = allTags.filter(tag => !hasVersion(changelogPath, tag));
+
+  if (missingTags.length === 0) {
+    core.info('All tags have changelog entries - no backfill needed');
+    return 0;
+  }
+
+  core.info(`Backfilling ${missingTags.length} missing tags: ${missingTags.join(', ')}`);
+
+  // Process tags in order (oldest first) so they appear correctly in changelog
+  for (let i = 0; i < missingTags.length; i++) {
+    const tag = missingTags[i];
+    const tagIndex = allTags.indexOf(tag);
+    const previousTag = tagIndex > 0 ? allTags[tagIndex - 1] : null;
+
+    core.info(`\nProcessing ${tag} (previous: ${previousTag || 'none'})`);
+
+    // Get commits for this tag
+    const commits = getCommitsBetween(previousTag, tag);
+    core.info(`  Found ${commits.length} commits`);
+
+    // Filter merge commits
+    const filteredCommits = commits.filter(c => !c.message.startsWith('Merge '));
+
+    // Enrich with PR numbers
+    const enrichedCommits = await Promise.all(
+      filteredCommits.map(commit => enrichCommitWithPR(octokit, owner, repo, commit))
+    );
+
+    // Convert to entries
+    const entries = enrichedCommits.map(toCommitEntry);
+
+    // Get the tag date
+    const date = getTagDate(tag);
+
+    // Add version section
+    addVersionSection(changelogPath, tag, date, entries, unreleasedHeader);
+    core.info(`  Added ${tag} (${date}) with ${entries.length} entries`);
+  }
+
+  return missingTags.length;
+}
+
+/**
  * Handle push to main branch - add new commits to Unreleased section
  */
 async function handleMainPush(
@@ -224,6 +348,12 @@ async function handleMainPush(
   unreleasedHeader: string
 ): Promise<void> {
   core.info('Handling push to main branch');
+
+  // First, check if we need to backfill missing tags
+  const backfilledCount = await backfillChangelog(octokit, owner, repo, changelogPath, unreleasedHeader);
+  if (backfilledCount > 0) {
+    core.info(`\nBackfilled ${backfilledCount} version(s)`);
+  }
 
   // Get the latest tag
   const latestTag = getLatestTag();
@@ -342,10 +472,13 @@ main();
 
 export {
   getLatestTag,
+  getAllTags,
   getCommitsSince,
+  getCommitsBetween,
   filterCommits,
   toCommitEntry,
   isTagPush,
-  getTagName
+  getTagName,
+  backfillChangelog
 };
 
