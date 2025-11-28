@@ -38,6 +38,31 @@ If you have a separate workflow, you can wait for it to complete before releasin
       - completed
 ```
 
+**Important:** Add the `if: startsWith(github.ref, 'refs/tags/')` condition to your job to ensure it only runs on tag pushes:
+
+```yaml
+jobs:
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: 5.3.0
+      - run: opam install . --deps-only
+      - run: opam install dune-release -y
+
+      - uses: davesnx/dune-release-action@v0.2
+        with:
+          packages: 'your-package'
+          github-token: ${{ secrets.GH_TOKEN }}
+```
+
 ## Step 1: update CHANGES.md
 
 As you work, add changes under `# Unreleased`. Before releasing, create a new header with the version and move all items there.
