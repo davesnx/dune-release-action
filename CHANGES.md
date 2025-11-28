@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+
+- improve spacing and formatting for our changes.md by @davesnx ([#1](https://github.com/davesnx/dune-release-action/pull/1))
+- Format changelog better by @davesnx ([#1](https://github.com/davesnx/dune-release-action/pull/1))
 - feat(update-changelog): use GitHub handles and link PRs by @davesnx ([#1](https://github.com/davesnx/dune-release-action/pull/1))
 - Detect previous tags by @davesnx ([#1](https://github.com/davesnx/dune-release-action/pull/1))
 - chore: update changelog by @davesnx ([#1](https://github.com/davesnx/dune-release-action/pull/1))
