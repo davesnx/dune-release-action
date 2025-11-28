@@ -323,11 +323,15 @@ export function addToUnreleased(
 
     // Add new entries after header, preserving existing content
     const trimmedExisting = existingContent.trim();
-    const newSectionContent = trimmedExisting
-      ? `\n\n${formattedEntries}\n${trimmedExisting}\n`
-      : `\n\n${formattedEntries}\n`;
+    const entriesBlock = trimmedExisting
+      ? `${formattedEntries}\n${trimmedExisting}`
+      : formattedEntries;
 
-    content = beforeContent + newSectionContent + afterContent;
+    // Ensure blank line before next section (if any)
+    const trimmedAfter = afterContent.trim();
+    const afterSection = trimmedAfter ? `\n\n${trimmedAfter}\n` : '\n';
+
+    content = beforeContent + '\n\n' + entriesBlock + afterSection;
   } else {
     // No unreleased section exists - create one
     // Check if there's a title line (# Changelog or similar)
@@ -394,17 +398,27 @@ export function promoteUnreleasedToVersion(
   const beforeUnreleased = content.slice(0, unreleasedSection.headerStart);
   const afterUnreleased = content.slice(unreleasedSection.contentEnd);
 
-  const newContent = [
+  // Build with proper spacing between sections
+  const parts = [
     beforeUnreleased.trimEnd(),
     '',
     unreleasedHeader,
     '',
     versionHeader,
     '',
-    unreleasedContent,
-    afterUnreleased.trimStart()
-  ].join('\n');
+    unreleasedContent
+  ];
 
+  // Add trailing content with proper separation
+  const trimmedAfter = afterUnreleased.trimStart();
+  if (trimmedAfter) {
+    parts.push('');  // Blank line before next section
+    parts.push(trimmedAfter);
+  } else {
+    parts.push('');  // Ensure file ends with newline
+  }
+
+  const newContent = parts.join('\n');
   Fs.writeFileSync(changelogPath, newContent, 'utf-8');
 }
 
@@ -480,6 +494,7 @@ export function addVersionSection(
     ? entries.map(formatCommitEntry).join('\n')
     : '- Initial release';
 
+  // Version section with proper spacing (blank line after entries)
   const versionSection = `${versionHeader}\n\n${formattedEntries}`;
 
   if (!content.trim()) {
@@ -497,9 +512,13 @@ export function addVersionSection(
     const beforeUnreleased = content.slice(0, unreleasedSection.contentEnd);
     const afterUnreleased = content.slice(unreleasedSection.contentEnd);
 
-    // Check if we need to insert in order (find the right position)
-    // For now, just insert right after unreleased
-    const newContent = beforeUnreleased.trimEnd() + '\n\n' + versionSection + '\n' + afterUnreleased.trimStart();
+    // Build with proper spacing:
+    // - Blank line after unreleased content (before new version header)
+    // - Blank line after version entries (before next section)
+    const trimmedAfter = afterUnreleased.trim();
+    const afterSection = trimmedAfter ? `\n\n${trimmedAfter}\n` : '\n';
+
+    const newContent = beforeUnreleased.trimEnd() + '\n\n' + versionSection + afterSection;
     Fs.writeFileSync(changelogPath, newContent, 'utf-8');
   } else {
     // No unreleased section - check for title
@@ -507,7 +526,7 @@ export function addVersionSection(
 
     if (titleMatch) {
       const afterTitle = titleMatch[0].length;
-      const newContent = content.slice(0, afterTitle) + '\n' + unreleasedHeader + '\n\n' + versionSection + '\n' + content.slice(afterTitle);
+      const newContent = content.slice(0, afterTitle) + '\n' + unreleasedHeader + '\n\n' + versionSection + '\n\n' + content.slice(afterTitle);
       Fs.writeFileSync(changelogPath, newContent, 'utf-8');
     } else {
       // No title - prepend everything
