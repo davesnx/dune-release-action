@@ -317,7 +317,7 @@ export function addToUnreleased(
 
   if (unreleasedSection) {
     // Insert entries after the header
-    const beforeContent = content.slice(0, unreleasedSection.contentStart);
+    const headerContent = content.slice(0, unreleasedSection.headerEnd);
     const existingContent = content.slice(unreleasedSection.contentStart, unreleasedSection.contentEnd);
     const afterContent = content.slice(unreleasedSection.contentEnd);
 
@@ -331,7 +331,8 @@ export function addToUnreleased(
     const trimmedAfter = afterContent.trim();
     const afterSection = trimmedAfter ? `\n\n${trimmedAfter}\n` : '\n';
 
-    content = beforeContent + '\n\n' + entriesBlock + afterSection;
+    // One blank line after header, then entries
+    content = headerContent + '\n\n' + entriesBlock + afterSection;
   } else {
     // No unreleased section exists - create one
     // Check if there's a title line (# Changelog or similar)
