@@ -2,6 +2,8 @@
 
 Automatically release OCaml packages to opam using `dune-release` in GitHub Actions workflows 🚀
 
+**New to automatic releasing?** Check out the [GUIDE.md](./GUIDE.md) for best practices on when to release, how to maintain your changelog, and a handy release script.
+
 ## Requirements
 
 ### GitHub Setup
@@ -64,7 +66,7 @@ jobs:
       - run: opam install dune-release -y
 
       # Add the dune-release-action
-      - uses: ./.github/scripts/release
+      - uses: @davesnx/dune-release-action@0.2
         with:
           packages: 'your-package'
           github-token: ${{ secrets.GH_TOKEN }}
@@ -73,7 +75,7 @@ jobs:
 ### Advanced example (all options)
 
 ```yaml
-- uses: ./.github/scripts/release
+- uses: @davesnx/dune-release-action@0.2
   with:
     packages: 'your-package'              # (required) The package name(s) to publish to the opam-repository
     packages: |                           # you can pass multiple packages
