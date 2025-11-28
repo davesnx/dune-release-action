@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- feat(update-changelog): add auto-generated header comment to changelog by @davesnx ([#1](https://github.com/davesnx/dune-release-action/pull/1))
+- add test suite for changelog by @davesnx ([#1](https://github.com/davesnx/dune-release-action/pull/1))
 - prevent accumulating blank lines by @davesnx ([#1](https://github.com/davesnx/dune-release-action/pull/1))
 - Format CHANGES by @davesnx ([#1](https://github.com/davesnx/dune-release-action/pull/1))
 - Push commits when there's no pr by @davesnx ([#1](https://github.com/davesnx/dune-release-action/pull/1))
