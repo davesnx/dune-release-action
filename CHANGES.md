@@ -1,9 +1,15 @@
 # Changelog
 
+## v0.2.4
+
+- Add `opam-repository` option to target custom opam repositories (default: `ocaml/opam-repository`) [@davesnx](https://github.com/davesnx)
+- Add `build-dir` option to specify custom build directory for dune-release [@davesnx](https://github.com/davesnx)
+- Add `publish-message` option for custom GitHub release messages [@davesnx](https://github.com/davesnx)
+
 ## v0.2.3
 
 - Add `include-submodules` option to include git submodules in the distribution tarball [@davesnx](https://github.com/davesnx)
-- Push GUIDE.md [@davesnx](https://github.com/davenx)([fc734f3](https://github.com/davesnx/dune-release-action/commit/fc734f3496201d49682c4670272af11f66b7004e))
+- Push GUIDE.md [@davesnx](https://github.com/davesnx)([fc734f3](https://github.com/davesnx/dune-release-action/commit/fc734f3496201d49682c4670272af11f66b7004e))
 
 ## v0.2.2 (2025-11-12)
 

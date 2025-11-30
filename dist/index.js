@@ -30652,7 +30652,7 @@ local: ${config.local}
     /**
      * Clone opam-repository fork and sync with upstream
      */
-    async cloneOpamRepository(forkUrl, localPath, forkOwner) {
+    async cloneOpamRepository(forkUrl, localPath, forkOwner, opamRepository) {
         core.startGroup('Cloning opam-repository fork');
         // Check if the fork exists
         const forkExists = await this.checkRepositoryExists(forkOwner, 'opam-repository');
@@ -30660,7 +30660,7 @@ local: ${config.local}
             core.error(`Fork ${forkOwner}/opam-repository does not exist or is not accessible.`);
             core.error('');
             core.error('To fix this:');
-            core.error(`1. Create a fork of ocaml/opam-repository at: https://github.com/ocaml/opam-repository/fork`);
+            core.error(`1. Create a fork of ${opamRepository.owner}/${opamRepository.repo} at: https://github.com/${opamRepository.owner}/${opamRepository.repo}/fork`);
             core.error(`2. Make sure your GH_TOKEN has access to the fork`);
             core.error('3. Verify your token has the "repo" scope enabled');
             throw new Error(`Repository ${forkOwner}/opam-repository not found or not accessible`);
@@ -30699,9 +30699,10 @@ local: ${config.local}
                 core.error(`Failed to change to cloned repository directory: ${error.message}`);
                 throw new Error(`Could not change to directory ${localPath}: ${error.message}`);
             }
-            // Add upstream remote
+            // Add upstream remote (use configured opam repository)
+            const upstreamUrl = `https://github.com/${opamRepository.owner}/${opamRepository.repo}.git`;
             try {
-                this.exec('git remote add upstream https://github.com/ocaml/opam-repository.git');
+                this.exec(`git remote add upstream ${upstreamUrl}`);
             }
             catch {
                 this.info('Upstream remote already exists');
@@ -30775,7 +30776,7 @@ local: ${config.local}
     /**
      * Run the full release pipeline
      */
-    async runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository, includeSubmodules = false) {
+    async runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository, includeSubmodules = false, opamRepository = { owner: 'ocaml', repo: 'opam-repository' }, buildDir, publishMessage) {
         let versionChangelogPath = null;
         try {
             // Check dependencies first
@@ -30835,12 +30836,15 @@ local: ${config.local}
             // Setup dune-release config
             this.setupDuneReleaseConfig(duneConfig);
             // Clone opam repository (even in dry-run to validate the setup)
-            await this.cloneOpamRepository(duneConfig.remote, duneConfig.local, duneConfig.user);
+            await this.cloneOpamRepository(duneConfig.remote, duneConfig.local, duneConfig.user, opamRepository);
             // Distribute release archive
             core.startGroup('Distributing release archive');
             const distribArgs = ['-p', packages, '--skip-tests', '--skip-lint'];
             if (includeSubmodules) {
                 distribArgs.push('--include-submodules');
+            }
+            if (buildDir) {
+                distribArgs.push(`--build-dir=${buildDir}`);
             }
             this.runDuneRelease('distrib', distribArgs);
             core.endGroup();
@@ -30850,7 +30854,14 @@ local: ${config.local}
                 process.env.DUNE_RELEASE_DELEGATE = 'github-dune-release';
                 process.env.GITHUB_TOKEN = this.context.token;
                 this.info(`Publishing with changelog: ${changelogPath}`);
-                this.runDuneRelease('publish', ['--yes', `--change-log=${changelogPath}`]);
+                const publishArgs = ['--yes', `--change-log=${changelogPath}`];
+                if (buildDir) {
+                    publishArgs.push(`--build-dir=${buildDir}`);
+                }
+                if (publishMessage) {
+                    publishArgs.push(`--msg=${publishMessage}`);
+                }
+                this.runDuneRelease('publish', publishArgs);
                 core.endGroup();
             }
             else {
@@ -30860,7 +30871,11 @@ local: ${config.local}
             }
             // Package opam release (always needed for validation)
             core.startGroup(`Packaging opam release for ${packages}`);
-            this.runDuneRelease('opam', ['pkg', '-p', packages, '--yes', `--change-log=${changelogPath}`]);
+            const opamPkgArgs = ['pkg', '-p', packages, '--yes', `--change-log=${changelogPath}`];
+            if (buildDir) {
+                opamPkgArgs.push(`--build-dir=${buildDir}`);
+            }
+            this.runDuneRelease('opam', opamPkgArgs);
             core.endGroup();
             // Submit to opam repository (conditional)
             if (toOpamRepository) {
@@ -30875,7 +30890,13 @@ local: ${config.local}
                     core.error(`Failed to change to workspace directory: ${error.message}`);
                     throw new Error(`Could not change to workspace directory ${this.context.workspace}: ${error.message}`);
                 }
-                this.runDuneRelease('opam', ['submit', '-p', packages, '--yes', `--change-log=${changelogPath}`]);
+                const opamSubmitArgs = ['submit', '-p', packages, '--yes', `--change-log=${changelogPath}`];
+                if (buildDir) {
+                    opamSubmitArgs.push(`--build-dir=${buildDir}`);
+                }
+                // Pass custom opam repository target
+                opamSubmitArgs.push(`--opam-repo=${opamRepository.owner}/${opamRepository.repo}`);
+                this.runDuneRelease('opam', opamSubmitArgs);
                 core.endGroup();
             }
             else {
@@ -30894,7 +30915,7 @@ local: ${config.local}
                 // For multi-package releases, join package names with hyphens
                 const opamBranch = `release-${packages.replace(/,/g, '-')}-${version}`;
                 const effectiveUser = duneConfig.user;
-                const opamPrUrl = `https://github.com/ocaml/opam-repository/compare/master...${effectiveUser}:opam-repository:${opamBranch}`;
+                const opamPrUrl = `https://github.com/${opamRepository.owner}/${opamRepository.repo}/compare/master...${effectiveUser}:opam-repository:${opamBranch}`;
                 core.notice(`Opam PR: ${opamPrUrl}`);
                 // Create a commit with the release information
                 try {
@@ -30982,6 +31003,18 @@ async function main() {
         const toGithubReleases = core.getInput('to-github-releases') !== 'false';
         const verbose = core.getInput('verbose') === 'true';
         const includeSubmodules = core.getInput('include-submodules') === 'true';
+        const opamRepositoryInput = core.getInput('opam-repository') || 'ocaml/opam-repository';
+        const buildDir = core.getInput('build-dir') || undefined;
+        const publishMessage = core.getInput('publish-message') || undefined;
+        // Parse opam-repository into owner/repo
+        const opamRepoParts = opamRepositoryInput.split('/');
+        if (opamRepoParts.length !== 2) {
+            throw new Error(`Invalid opam-repository format: ${opamRepositoryInput}. Expected format: owner/repo`);
+        }
+        const opamRepository = {
+            owner: opamRepoParts[0],
+            repo: opamRepoParts[1]
+        };
         // Validate that we're running on a tag
         // Use TEST_OVERRIDE_GITHUB_REF if provided (for testing), otherwise use GITHUB_REF
         const testRefOverride = process.env.TEST_OVERRIDE_GITHUB_REF || '';
@@ -31018,14 +31051,21 @@ async function main() {
             core.info(`Changelog: ${changelogPath}`);
             core.info(`User: ${effectiveUser}`);
             core.info(`Opam fork: ${opamRepoFork}`);
+            core.info(`Opam repository: ${opamRepository.owner}/${opamRepository.repo}`);
             core.info(`Publish to GitHub: ${toGithubReleases ? 'Yes' : 'No'}`);
             core.info(`Submit to opam: ${toOpamRepository ? 'Yes' : 'No'}`);
             core.info(`Include submodules: ${includeSubmodules ? 'Yes' : 'No'}`);
+            if (buildDir) {
+                core.info(`Build directory: ${buildDir}`);
+            }
+            if (publishMessage) {
+                core.info(`Publish message: ${publishMessage}`);
+            }
             core.info('================================');
         }
         // Run the release
         const releaseManager = new ReleaseManager(context, verbose);
-        await releaseManager.runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository, includeSubmodules);
+        await releaseManager.runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository, includeSubmodules, opamRepository, buildDir, publishMessage);
         core.setOutput('release-status', 'success');
     }
     catch (error) {

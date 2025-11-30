@@ -32,6 +32,16 @@ inputs:
     description: 'If true, includes git submodules in the distribution tarball'
     required: false
     default: 'false'
+  opam-repository:
+    description: 'Target opam repository in owner/repo format (e.g., ocaml/opam-repository)'
+    required: false
+    default: 'ocaml/opam-repository'
+  build-dir:
+    description: 'Build directory for dune-release distribution'
+    required: false
+  publish-message:
+    description: 'Custom message for the GitHub release publication'
+    required: false
 
 outputs:
   version:
