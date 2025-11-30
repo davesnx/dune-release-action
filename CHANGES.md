@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.2.3
 
 - Add `include-submodules` option to include git submodules in the distribution tarball [@davesnx](https://github.com/davesnx)
 - Push GUIDE.md [@davesnx](https://github.com/davenx)([fc734f3](https://github.com/davesnx/dune-release-action/commit/fc734f3496201d49682c4670272af11f66b7004e))
