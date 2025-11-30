@@ -87,6 +87,7 @@ jobs:
     verbose: true                         # Show detailed logs
     to-opam-repository: true              # Submit PR to opam-repository
     to-github-releases: true              # Create GitHub release
+    include-submodules: true              # Include git submodules in the tarball
 ```
 
 ## Inputs
@@ -117,6 +118,7 @@ Your `github-token` secret must have these scopes:
 | `verbose` | If true, shows detailed logging output | `false` |
 | `to-opam-repository` | If true, submits a PR to opam-repository | `true` |
 | `to-github-releases` | If true, creates a GitHub release | `true` |
+| `include-submodules` | If true, includes git submodules in the distribution tarball | `false` |
 
 ### Changelog Format
 
