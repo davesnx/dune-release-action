@@ -42,12 +42,20 @@ inputs:
   publish-message:
     description: 'Custom message for the GitHub release publication'
     required: false
+  dry-run:
+    description: 'Validate setup without publishing. Runs lint, changelog validation, and distrib but skips GitHub release and opam submission'
+    required: false
+    default: 'false'
 
 outputs:
   version:
     description: 'Extracted version from git tag'
   release-status:
     description: 'Status of the release (success/failed)'
+  github-release-url:
+    description: 'URL of the created GitHub release'
+  opam-pr-url:
+    description: 'URL to create the opam PR'
 
 runs:
   using: 'node20'

@@ -30458,7 +30458,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.ReleaseManager = void 0;
+exports.defaultExecutor = exports.ReleaseManager = void 0;
 const core = __importStar(__nccwpck_require__(7484));
 const github = __importStar(__nccwpck_require__(3228));
 const child_process_1 = __nccwpck_require__(5317);
@@ -30466,12 +30466,49 @@ const fs_1 = __importDefault(__nccwpck_require__(9896));
 const path_1 = __importDefault(__nccwpck_require__(6928));
 const os_1 = __importDefault(__nccwpck_require__(857));
 const changelog_1 = __nccwpck_require__(7900);
+// Default executor implementation using real system calls
+const defaultExecutor = {
+    exec(command, options = {}) {
+        const result = (0, child_process_1.execSync)(command, {
+            encoding: 'utf-8',
+            stdio: options.silent || options.stdio === 'pipe' ? 'pipe' : ['ignore', 'inherit', 'inherit']
+        });
+        if (result === null || result === undefined) {
+            return '';
+        }
+        return result.toString().trim();
+    },
+    fileExists(path) {
+        return fs_1.default.existsSync(path);
+    },
+    readFile(path) {
+        return fs_1.default.readFileSync(path, 'utf-8');
+    },
+    writeFile(path, content, options) {
+        fs_1.default.writeFileSync(path, content, options);
+    },
+    mkdirSync(path, options) {
+        fs_1.default.mkdirSync(path, options);
+    },
+    unlinkSync(path) {
+        fs_1.default.unlinkSync(path);
+    },
+    chdir(path) {
+        process.chdir(path);
+    },
+    cwd() {
+        return process.cwd();
+    }
+};
+exports.defaultExecutor = defaultExecutor;
 class ReleaseManager {
     context;
     verbose;
-    constructor(context, verbose = false) {
+    executor;
+    constructor(context, verbose = false, executor = defaultExecutor) {
         this.context = context;
         this.verbose = verbose;
+        this.executor = executor;
     }
     /**
      * Conditional info logging - only logs if verbose mode is enabled
@@ -30489,17 +30526,7 @@ class ReleaseManager {
             this.info(`> ${command}`);
         }
         try {
-            const result = (0, child_process_1.execSync)(command, {
-                encoding: 'utf-8',
-                // Use 'ignore' for stdin to avoid TTY errors in CI, inherit stdout/stderr for visibility
-                stdio: options.silent ? 'pipe' : ['ignore', 'inherit', 'inherit']
-            });
-            // When stdio is 'inherit', execSync returns null
-            // When stdio is 'pipe', it returns the output
-            if (result === null || result === undefined) {
-                return '';
-            }
-            return result.toString().trim();
+            return this.executor.exec(command, { silent: options.silent });
         }
         catch (error) {
             const message = `Command failed: ${command}\n${error.message}`;
@@ -30610,15 +30637,15 @@ class ReleaseManager {
         core.startGroup('Setting up dune-release configuration');
         try {
             const configDir = path_1.default.join(os_1.default.homedir(), '.config', 'dune');
-            fs_1.default.mkdirSync(configDir, { recursive: true });
+            this.executor.mkdirSync(configDir, { recursive: true });
             const configContent = `user: ${config.user}
 remote: ${config.remote}
 local: ${config.local}
 `;
-            fs_1.default.writeFileSync(path_1.default.join(configDir, 'release.yml'), configContent);
+            this.executor.writeFile(path_1.default.join(configDir, 'release.yml'), configContent);
             // Create GitHub token file with secure permissions
             const tokenPath = path_1.default.join(configDir, 'github.token');
-            fs_1.default.writeFileSync(tokenPath, this.context.token, { mode: 0o600 });
+            this.executor.writeFile(tokenPath, this.context.token, { mode: 0o600 });
             this.info(`GitHub token file created at ${tokenPath}`);
             this.info('dune-release configuration created');
         }
@@ -30669,7 +30696,7 @@ local: ${config.local}
         // Create directory structure
         const gitDir = path_1.default.dirname(localPath);
         try {
-            fs_1.default.mkdirSync(gitDir, { recursive: true });
+            this.executor.mkdirSync(gitDir, { recursive: true });
             this.info(`Created directory: ${gitDir}`);
         }
         catch (error) {
@@ -30690,16 +30717,15 @@ local: ${config.local}
             throw error;
         }
         // Set up upstream and sync
-        const originalDir = process.cwd();
+        const originalDir = this.executor.cwd();
         try {
             try {
-                process.chdir(localPath);
+                this.executor.chdir(localPath);
             }
             catch (error) {
                 core.error(`Failed to change to cloned repository directory: ${error.message}`);
                 throw new Error(`Could not change to directory ${localPath}: ${error.message}`);
             }
-            // Add upstream remote (use configured opam repository)
             const upstreamUrl = `https://github.com/${opamRepository.owner}/${opamRepository.repo}.git`;
             try {
                 this.exec(`git remote add upstream ${upstreamUrl}`);
@@ -30707,7 +30733,6 @@ local: ${config.local}
             catch {
                 this.info('Upstream remote already exists');
             }
-            // Fetch and merge latest from upstream (shallow fetch)
             this.exec('git fetch --depth 1 upstream master');
             this.exec('git checkout master');
             try {
@@ -30719,7 +30744,7 @@ local: ${config.local}
             }
         }
         finally {
-            process.chdir(originalDir);
+            this.executor.chdir(originalDir);
         }
         core.endGroup();
     }
@@ -30731,7 +30756,7 @@ local: ${config.local}
         this.exec(fullCommand);
     }
     /**
-     * Delete tag on failure
+     * Delete tag on failure. Throws TagDeletionError after cleanup.
      */
     deleteTag() {
         const tagName = this.context.ref.replace('refs/tags/', '');
@@ -30770,13 +30795,12 @@ local: ${config.local}
         catch (error) {
             core.warning(`Could not delete local tag ${tagName}: ${error.message}`);
         }
-        core.error(`Release failed - tag cleanup completed. Please fix the issues and create a new tag.`);
-        process.exit(1);
+        throw new Error(`Release failed - tag ${tagName} has been deleted. Please fix the issues and create a new tag.`);
     }
     /**
      * Run the full release pipeline
      */
-    async runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository, includeSubmodules = false, opamRepository = { owner: 'ocaml', repo: 'opam-repository' }, buildDir, publishMessage) {
+    async runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository, includeSubmodules = false, opamRepository = { owner: 'ocaml', repo: 'opam-repository' }, buildDir, publishMessage, dryRun = false) {
         let versionChangelogPath = null;
         try {
             // Check dependencies first
@@ -30786,8 +30810,11 @@ local: ${config.local}
             // Setup
             this.configureGit();
             const version = this.extractVersion();
-            // Log what will be published
-            if (!toGithubReleases && !toOpamRepository) {
+            // Log mode
+            if (dryRun) {
+                core.notice('DRY RUN MODE - No releases will be published, no PRs submitted');
+            }
+            else if (!toGithubReleases && !toOpamRepository) {
                 core.warning('Both GitHub releases and opam submission are disabled - running validation only');
             }
             else {
@@ -30818,7 +30845,7 @@ local: ${config.local}
             (0, changelog_1.extractVersionChangelog)(absoluteChangelogPath, version, versionChangelogPath);
             // Log the extracted content for verification
             try {
-                const extractedContent = fs_1.default.readFileSync(versionChangelogPath, 'utf-8');
+                const extractedContent = this.executor.readFile(versionChangelogPath);
                 core.info(`Created version-specific changelog at: ${versionChangelogPath}`);
                 core.info(`Changelog content (${extractedContent.length} chars):`);
                 this.info(extractedContent.substring(0, 200) + (extractedContent.length > 200 ? '...' : ''));
@@ -30849,7 +30876,15 @@ local: ${config.local}
             this.runDuneRelease('distrib', distribArgs);
             core.endGroup();
             // Publish to GitHub (conditional)
-            if (toGithubReleases) {
+            const tagName = this.context.ref.replace('refs/tags/', '');
+            const githubReleaseUrl = `https://github.com/${this.context.repository}/releases/tag/${tagName}`;
+            if (dryRun) {
+                core.startGroup('Publishing to GitHub (dry-run)');
+                core.info('DRY RUN: Would publish to GitHub');
+                core.info(`DRY RUN: Release URL would be: ${githubReleaseUrl}`);
+                core.endGroup();
+            }
+            else if (toGithubReleases) {
                 core.startGroup('Publishing to GitHub');
                 process.env.DUNE_RELEASE_DELEGATE = 'github-dune-release';
                 process.env.GITHUB_TOKEN = this.context.token;
@@ -30862,6 +30897,7 @@ local: ${config.local}
                     publishArgs.push(`--msg=${publishMessage}`);
                 }
                 this.runDuneRelease('publish', publishArgs);
+                core.setOutput('github-release-url', githubReleaseUrl);
                 core.endGroup();
             }
             else {
@@ -30869,7 +30905,7 @@ local: ${config.local}
                 core.warning('Skipping GitHub release publication');
                 core.endGroup();
             }
-            // Package opam release (always needed for validation)
+            // Package opam release (always needed for validation, even in dry-run)
             core.startGroup(`Packaging opam release for ${packages}`);
             const opamPkgArgs = ['pkg', '-p', packages, '--yes', `--change-log=${changelogPath}`];
             if (buildDir) {
@@ -30877,14 +30913,24 @@ local: ${config.local}
             }
             this.runDuneRelease('opam', opamPkgArgs);
             core.endGroup();
+            // Construct opam PR URL (used for output and logging)
+            const opamBranch = `release-${packages.replace(/,/g, '-')}-${version}`;
+            const effectiveUser = duneConfig.user;
+            const opamPrUrl = `https://github.com/${opamRepository.owner}/${opamRepository.repo}/compare/master...${effectiveUser}:opam-repository:${opamBranch}`;
             // Submit to opam repository (conditional)
-            if (toOpamRepository) {
+            if (dryRun) {
+                core.startGroup('Submitting to opam repository (dry-run)');
+                core.info('DRY RUN: Would submit to opam repository');
+                core.info(`DRY RUN: PR URL would be: ${opamPrUrl}`);
+                core.endGroup();
+            }
+            else if (toOpamRepository) {
                 core.startGroup('Submitting to opam repository');
                 process.env.DUNE_RELEASE_DELEGATE = 'github-dune-release';
                 process.env.GITHUB_TOKEN = this.context.token;
                 // Ensure we're in the project directory
                 try {
-                    process.chdir(this.context.workspace);
+                    this.executor.chdir(this.context.workspace);
                 }
                 catch (error) {
                     core.error(`Failed to change to workspace directory: ${error.message}`);
@@ -30894,9 +30940,9 @@ local: ${config.local}
                 if (buildDir) {
                     opamSubmitArgs.push(`--build-dir=${buildDir}`);
                 }
-                // Pass custom opam repository target
                 opamSubmitArgs.push(`--opam-repo=${opamRepository.owner}/${opamRepository.repo}`);
                 this.runDuneRelease('opam', opamSubmitArgs);
+                core.setOutput('opam-pr-url', opamPrUrl);
                 core.endGroup();
             }
             else {
@@ -30905,46 +30951,47 @@ local: ${config.local}
                 core.endGroup();
             }
             // Success notification
-            const tagName = this.context.ref.replace('refs/tags/', '');
-            core.notice(`Release ${tagName} completed successfully!`);
-            if (toGithubReleases) {
-                core.notice(`GitHub release: https://github.com/${this.context.repository}/releases/tag/${tagName}`);
+            if (dryRun) {
+                core.notice(`DRY RUN completed for ${tagName} - validation passed!`);
+                core.notice(`GitHub release URL (if published): ${githubReleaseUrl}`);
+                core.notice(`Opam PR URL (if submitted): ${opamPrUrl}`);
             }
-            if (toOpamRepository) {
-                // Construct the expected opam PR URL
-                // For multi-package releases, join package names with hyphens
-                const opamBranch = `release-${packages.replace(/,/g, '-')}-${version}`;
-                const effectiveUser = duneConfig.user;
-                const opamPrUrl = `https://github.com/${opamRepository.owner}/${opamRepository.repo}/compare/master...${effectiveUser}:opam-repository:${opamBranch}`;
-                core.notice(`Opam PR: ${opamPrUrl}`);
-                // Create a commit with the release information
-                try {
-                    core.startGroup('Creating release tracking commit');
-                    let commitMessage = `release ${version}\n\n`;
-                    if (toOpamRepository) {
-                        commitMessage += `opam pr: ${opamPrUrl}\n`;
-                    }
-                    if (toGithubReleases) {
-                        commitMessage += `github release: https://github.com/${this.context.repository}/releases/tag/${tagName}\n`;
-                    }
-                    // Check if we're on a branch (not detached HEAD)
-                    const currentBranch = this.exec('git rev-parse --abbrev-ref HEAD', { silent: true });
-                    if (currentBranch === 'HEAD') {
-                        this.info('Running on detached HEAD (tag), skipping commit creation');
-                    }
-                    else {
-                        // Allow empty commit in case there are no changes
-                        this.exec(`git commit --allow-empty -m "${commitMessage.trim()}"`);
-                        this.info('Created commit with release information');
-                        // Push the commit to the repository
-                        this.exec(`git push origin ${currentBranch}`);
-                        this.info(`Pushed release tracking commit to ${currentBranch}`);
-                    }
-                    core.endGroup();
+            else {
+                core.notice(`Release ${tagName} completed successfully!`);
+                if (toGithubReleases) {
+                    core.notice(`GitHub release: ${githubReleaseUrl}`);
                 }
-                catch (error) {
-                    core.warning(`Could not create or push release tracking commit: ${error.message}`);
-                    // Non-fatal, continue
+                if (toOpamRepository) {
+                    core.notice(`Opam PR: ${opamPrUrl}`);
+                    // Create a commit with the release information
+                    try {
+                        core.startGroup('Creating release tracking commit');
+                        let commitMessage = `release ${version}\n\n`;
+                        if (toOpamRepository) {
+                            commitMessage += `opam pr: ${opamPrUrl}\n`;
+                        }
+                        if (toGithubReleases) {
+                            commitMessage += `github release: ${githubReleaseUrl}\n`;
+                        }
+                        // Check if we're on a branch (not detached HEAD)
+                        const currentBranch = this.exec('git rev-parse --abbrev-ref HEAD', { silent: true });
+                        if (currentBranch === 'HEAD') {
+                            this.info('Running on detached HEAD (tag), skipping commit creation');
+                        }
+                        else {
+                            // Allow empty commit in case there are no changes
+                            this.exec(`git commit --allow-empty -m "${commitMessage.trim()}"`);
+                            this.info('Created commit with release information');
+                            // Push the commit to the repository
+                            this.exec(`git push origin ${currentBranch}`);
+                            this.info(`Pushed release tracking commit to ${currentBranch}`);
+                        }
+                        core.endGroup();
+                    }
+                    catch (error) {
+                        core.warning(`Could not create or push release tracking commit: ${error.message}`);
+                        // Non-fatal, continue
+                    }
                 }
             }
         }
@@ -30963,8 +31010,11 @@ local: ${config.local}
                 core.error('Please check that your GH_TOKEN secret is valid and not expired');
             }
             core.error(`Release failed: ${errorMessage}`);
-            // Only delete tag if we were publishing to GitHub (real release scenario)
-            if (toGithubReleases || toOpamRepository) {
+            // Skip tag deletion in dry-run mode or validation-only mode
+            if (dryRun) {
+                core.warning('DRY RUN: Skipping tag deletion on failure');
+            }
+            else if (toGithubReleases || toOpamRepository) {
                 this.deleteTag();
             }
             else {
@@ -30974,9 +31024,9 @@ local: ${config.local}
         }
         finally {
             // Clean up temporary changelog file
-            if (versionChangelogPath && fs_1.default.existsSync(versionChangelogPath)) {
+            if (versionChangelogPath && this.executor.fileExists(versionChangelogPath)) {
                 try {
-                    fs_1.default.unlinkSync(versionChangelogPath);
+                    this.executor.unlinkSync(versionChangelogPath);
                     this.info(`Cleaned up temporary changelog: ${versionChangelogPath}`);
                 }
                 catch (error) {
@@ -30989,49 +31039,22 @@ local: ${config.local}
 exports.ReleaseManager = ReleaseManager;
 async function main() {
     try {
-        const packagesInput = core.getInput('packages', { required: true });
-        // Parse packages input - supports multiple formats:
-        // 1. JSON array: ["mlx", "ocamlmerlin-mlx"]
-        // 2. YAML list (passed as newline-separated):
-        //    packages:
-        //      - mlx
-        //      - ocamlmerlin-mlx
-        // 3. Comma-separated string: "mlx,ocamlmerlin-mlx"
-        // 4. Single package: "mlx"
+        const packagesInput = core.getInput('packages', { required: true }).trim();
+        // Supports: JSON array, YAML list (newline-separated), comma-separated, or single package
         let packagesArray;
-        const trimmedInput = packagesInput.trim();
-        if (trimmedInput.startsWith('[') && trimmedInput.endsWith(']')) {
-            // JSON array format: ["mlx", "ocamlmerlin-mlx"]
-            try {
-                const parsed = JSON.parse(trimmedInput);
-                if (!Array.isArray(parsed)) {
-                    throw new Error('packages input parsed as JSON but is not an array');
-                }
-                packagesArray = parsed.map((pkg) => String(pkg).trim()).filter(pkg => pkg.length > 0);
-            }
-            catch (error) {
-                throw new Error(`Failed to parse packages as JSON array: ${error.message}`);
-            }
+        if (packagesInput.startsWith('[') && packagesInput.endsWith(']')) {
+            packagesArray = JSON.parse(packagesInput);
         }
-        else if (trimmedInput.includes('\n')) {
-            // YAML list format (GitHub Actions passes as newline-separated)
-            packagesArray = trimmedInput
-                .split('\n')
-                .map(pkg => pkg.trim())
-                .filter(pkg => pkg.length > 0);
+        else if (packagesInput.includes('\n')) {
+            packagesArray = packagesInput.split('\n');
         }
-        else if (trimmedInput.includes(',')) {
-            // Comma-separated format: "mlx,ocamlmerlin-mlx"
-            packagesArray = trimmedInput
-                .split(',')
-                .map(pkg => pkg.trim())
-                .filter(pkg => pkg.length > 0);
+        else if (packagesInput.includes(',')) {
+            packagesArray = packagesInput.split(',');
         }
         else {
-            // Single package
-            packagesArray = [trimmedInput];
+            packagesArray = [packagesInput];
         }
-        // Join packages with commas for -p flag
+        packagesArray = packagesArray.map(pkg => pkg.trim()).filter(pkg => pkg.length > 0);
         const packages = packagesArray.join(',');
         const changelogPath = core.getInput('changelog') || './CHANGES.md';
         const token = core.getInput('github-token', { required: true });
@@ -31042,17 +31065,12 @@ async function main() {
         const opamRepositoryInput = core.getInput('opam-repository') || 'ocaml/opam-repository';
         const buildDir = core.getInput('build-dir') || undefined;
         const publishMessage = core.getInput('publish-message') || undefined;
-        // Parse opam-repository into owner/repo
-        const opamRepoParts = opamRepositoryInput.split('/');
-        if (opamRepoParts.length !== 2) {
-            throw new Error(`Invalid opam-repository format: ${opamRepositoryInput}. Expected format: owner/repo`);
+        const dryRun = core.getInput('dry-run') === 'true';
+        const [opamOwner, opamRepo] = opamRepositoryInput.split('/');
+        if (!opamOwner || !opamRepo) {
+            throw new Error(`Invalid opam-repository format: ${opamRepositoryInput}. Expected: owner/repo`);
         }
-        const opamRepository = {
-            owner: opamRepoParts[0],
-            repo: opamRepoParts[1]
-        };
-        // Validate that we're running on a tag
-        // Use TEST_OVERRIDE_GITHUB_REF if provided (for testing), otherwise use GITHUB_REF
+        const opamRepository = { owner: opamOwner, repo: opamRepo };
         const testRefOverride = process.env.TEST_OVERRIDE_GITHUB_REF || '';
         const ref = testRefOverride || process.env.GITHUB_REF || github.context.ref;
         if (!ref.startsWith('refs/tags/')) {
@@ -31061,26 +31079,21 @@ async function main() {
         if (testRefOverride && verbose) {
             core.warning(`Using TEST_OVERRIDE_GITHUB_REF: ${testRefOverride}`);
         }
-        // Get the user's GitHub username for the opam-repository fork
         const effectiveUser = process.env.GITHUB_ACTOR || 'github-actions';
         const opamRepoFork = `${effectiveUser}/opam-repository`;
-        // Use a local path that works both on GitHub Actions and locally
         const defaultOpamPath = process.env.RUNNER_TEMP ? '/home/runner/git/opam-repository' : '/tmp/opam-repository-test';
         const opamRepoLocal = core.getInput('opam-repo-local') || defaultOpamPath;
-        // Get context from environment and GitHub context
         const context = {
-            ref: ref, // Use the ref we already validated (includes test override)
+            ref,
             repository: process.env.GITHUB_REPOSITORY || `${github.context.repo.owner}/${github.context.repo.repo}`,
             workspace: process.env.GITHUB_WORKSPACE || process.cwd(),
-            token: token
+            token
         };
-        // Build dune-release config
         const duneConfig = {
             user: effectiveUser,
             remote: `git@github.com:${opamRepoFork}`,
             local: opamRepoLocal
         };
-        // Log configuration (only if verbose)
         if (verbose) {
             core.info('=== OCaml Dune Release Action ===');
             core.info(`Packages: ${packages}`);
@@ -31088,20 +31101,18 @@ async function main() {
             core.info(`User: ${effectiveUser}`);
             core.info(`Opam fork: ${opamRepoFork}`);
             core.info(`Opam repository: ${opamRepository.owner}/${opamRepository.repo}`);
-            core.info(`Publish to GitHub: ${toGithubReleases ? 'Yes' : 'No'}`);
-            core.info(`Submit to opam: ${toOpamRepository ? 'Yes' : 'No'}`);
-            core.info(`Include submodules: ${includeSubmodules ? 'Yes' : 'No'}`);
-            if (buildDir) {
+            core.info(`Publish to GitHub: ${toGithubReleases}`);
+            core.info(`Submit to opam: ${toOpamRepository}`);
+            core.info(`Include submodules: ${includeSubmodules}`);
+            core.info(`Dry run: ${dryRun}`);
+            if (buildDir)
                 core.info(`Build directory: ${buildDir}`);
-            }
-            if (publishMessage) {
+            if (publishMessage)
                 core.info(`Publish message: ${publishMessage}`);
-            }
             core.info('================================');
         }
-        // Run the release
         const releaseManager = new ReleaseManager(context, verbose);
-        await releaseManager.runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository, includeSubmodules, opamRepository, buildDir, publishMessage);
+        await releaseManager.runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository, includeSubmodules, opamRepository, buildDir, publishMessage, dryRun);
         core.setOutput('release-status', 'success');
     }
     catch (error) {
@@ -31110,7 +31121,15 @@ async function main() {
         process.exit(1);
     }
 }
-main();
+// Only run main() when executed directly, not when imported for testing
+// Check for common test environment indicators
+const isTestEnvironment = process.env.NODE_TEST_CONTEXT !== undefined ||
+    process.env.VITEST !== undefined ||
+    process.env.JEST_WORKER_ID !== undefined ||
+    process.argv.some(arg => arg.includes('--test'));
+if (!isTestEnvironment) {
+    main();
+}
 exports["default"] = main;
 
 

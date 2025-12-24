@@ -5,7 +5,9 @@
   "main": "dist/index.js",
   "scripts": {
     "type-check": "tsc --noEmit",
-    "test": "npx tsx --test lib/changelog.test.ts",
+    "test": "npx tsx --test lib/changelog.test.ts src/main.test.ts",
+    "test:changelog": "npx tsx --test lib/changelog.test.ts",
+    "test:main": "npx tsx --test src/main.test.ts",
     "build": "ncc build src/main.ts -o dist --source-map --license licenses.txt",
     "build:watch": "ncc build src/main.ts -o dist --source-map --license licenses.txt --watch"
   },
