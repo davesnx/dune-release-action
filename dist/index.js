@@ -30990,11 +30990,47 @@ exports.ReleaseManager = ReleaseManager;
 async function main() {
     try {
         const packagesInput = core.getInput('packages', { required: true });
-        // Parse packages input - GitHub Actions passes arrays as newline-separated strings
-        const packagesArray = packagesInput
-            .split('\n')
-            .map(pkg => pkg.trim())
-            .filter(pkg => pkg.length > 0);
+        // Parse packages input - supports multiple formats:
+        // 1. JSON array: ["mlx", "ocamlmerlin-mlx"]
+        // 2. YAML list (passed as newline-separated):
+        //    packages:
+        //      - mlx
+        //      - ocamlmerlin-mlx
+        // 3. Comma-separated string: "mlx,ocamlmerlin-mlx"
+        // 4. Single package: "mlx"
+        let packagesArray;
+        const trimmedInput = packagesInput.trim();
+        if (trimmedInput.startsWith('[') && trimmedInput.endsWith(']')) {
+            // JSON array format: ["mlx", "ocamlmerlin-mlx"]
+            try {
+                const parsed = JSON.parse(trimmedInput);
+                if (!Array.isArray(parsed)) {
+                    throw new Error('packages input parsed as JSON but is not an array');
+                }
+                packagesArray = parsed.map((pkg) => String(pkg).trim()).filter(pkg => pkg.length > 0);
+            }
+            catch (error) {
+                throw new Error(`Failed to parse packages as JSON array: ${error.message}`);
+            }
+        }
+        else if (trimmedInput.includes('\n')) {
+            // YAML list format (GitHub Actions passes as newline-separated)
+            packagesArray = trimmedInput
+                .split('\n')
+                .map(pkg => pkg.trim())
+                .filter(pkg => pkg.length > 0);
+        }
+        else if (trimmedInput.includes(',')) {
+            // Comma-separated format: "mlx,ocamlmerlin-mlx"
+            packagesArray = trimmedInput
+                .split(',')
+                .map(pkg => pkg.trim())
+                .filter(pkg => pkg.length > 0);
+        }
+        else {
+            // Single package
+            packagesArray = [trimmedInput];
+        }
         // Join packages with commas for -p flag
         const packages = packagesArray.join(',');
         const changelogPath = core.getInput('changelog') || './CHANGES.md';

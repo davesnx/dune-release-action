@@ -7,7 +7,7 @@ branding:
 
 inputs:
   packages:
-    description: 'Package name(s) for release. Can be a single package or multiple packages as array'
+    description: 'Package name(s) for release. Supports: single package, YAML list, JSON array, or comma-separated string'
     required: true
   changelog:
     description: 'Path to changelog file'
