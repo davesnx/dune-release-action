@@ -30689,9 +30689,10 @@ local: ${config.local}
             core.warning(`Could not create directory ${gitDir}: ${error.message}`);
             // Try to proceed anyway, git clone might handle it
         }
-        // Clone fork with shallow depth for faster cloning
+        // Clone fork - dune-release handles fetching from upstream itself
         try {
-            this.exec(`git clone --depth 1 ${forkUrl} ${localPath}`);
+            this.exec(`git clone ${forkUrl} ${localPath}`);
+            this.info(`Cloned ${forkUrl} to ${localPath}`);
         }
         catch (error) {
             core.error(`Failed to clone ${forkUrl}`);
@@ -30701,36 +30702,6 @@ local: ${config.local}
             core.error('2. The token might not have access to the fork');
             core.error('3. The fork might be private (it should be public)');
             throw error;
-        }
-        // Set up upstream and sync
-        const originalDir = this.executor.cwd();
-        try {
-            try {
-                this.executor.chdir(localPath);
-            }
-            catch (error) {
-                core.error(`Failed to change to cloned repository directory: ${error.message}`);
-                throw new Error(`Could not change to directory ${localPath}: ${error.message}`);
-            }
-            const upstreamUrl = `https://github.com/${opamRepository.owner}/${opamRepository.repo}.git`;
-            try {
-                this.exec(`git remote add upstream ${upstreamUrl}`);
-            }
-            catch {
-                this.info('Upstream remote already exists');
-            }
-            this.exec('git fetch --depth 1 upstream master');
-            this.exec('git checkout master');
-            try {
-                this.exec('git merge upstream/master --ff-only');
-                this.info('Fork synced with upstream');
-            }
-            catch {
-                core.warning('Your fork may be out of sync with upstream');
-            }
-        }
-        finally {
-            this.executor.chdir(originalDir);
         }
         core.endGroup();
     }
