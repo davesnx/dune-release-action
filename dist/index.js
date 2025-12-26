@@ -30836,6 +30836,7 @@ local: ${config.local}
                     opamSubmitArgs.push(`--build-dir=${buildDir}`);
                 }
                 opamSubmitArgs.push(`--opam-repo=${opamRepository.owner}/${opamRepository.repo}`);
+                opamSubmitArgs.push(`--remote-repo=git@github.com:${effectiveUser}/opam-repository`);
                 this.runDuneRelease('opam', opamSubmitArgs);
                 core.setOutput('opam-pr-url', opamPrUrl);
                 core.endGroup();
@@ -30970,7 +30971,9 @@ async function main() {
         if (testRefOverride && verbose) {
             core.warning(`Using TEST_OVERRIDE_GITHUB_REF: ${testRefOverride}`);
         }
-        const effectiveUser = process.env.GITHUB_ACTOR || 'github-actions';
+        const octokit = github.getOctokit(token);
+        const { data: authenticatedUser } = await octokit.rest.users.getAuthenticated();
+        const effectiveUser = authenticatedUser.login;
         const opamRepoFork = `${effectiveUser}/opam-repository`;
         const defaultOpamPath = process.env.RUNNER_TEMP ? '/home/runner/git/opam-repository' : '/tmp/opam-repository-test';
         const opamRepoLocal = core.getInput('opam-repo-local') || defaultOpamPath;
