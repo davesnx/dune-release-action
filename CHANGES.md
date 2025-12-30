@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.11
+
+- Make changelog optional - release succeeds even if changelog file is missing [@davesnx](https://github.com/davesnx)
+
 ## v0.2.10
 
 - Use effective user from token [#2](https://github.com/davesnx/dune-release-action/pull/2) [@andreypopp](https://github.com/andreypopp)

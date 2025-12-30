@@ -30735,31 +30735,36 @@ local: ${config.local}
                 }
             }
             this.info(`Starting release for version ${version}`);
-            // Validate and extract changelog
             core.startGroup('Validating changelog');
-            const validation = (0, changelog_1.validateChangelog)(changelogPath, version);
-            if (validation.warnings.length > 0) {
-                validation.warnings.forEach(warning => core.warning(warning));
+            if (!changelogPath || !this.executor.fileExists(changelogPath)) {
+                core.warning(`Changelog file not found: ${changelogPath || '(not specified)'}`);
+                core.warning('Proceeding without changelog - release will succeed but no changelog will be included');
+                changelogPath = null;
             }
-            if (!validation.valid) {
-                validation.errors.forEach(error => core.error(error));
-                throw new Error('Changelog validation failed. Please fix the issues and try again.');
+            else {
+                const validation = (0, changelog_1.validateChangelog)(changelogPath, version);
+                if (validation.warnings.length > 0) {
+                    validation.warnings.forEach(warning => core.warning(warning));
+                }
+                if (!validation.valid) {
+                    validation.errors.forEach(error => core.error(error));
+                    throw new Error('Changelog validation failed. Please fix the issues and try again.');
+                }
+                const changelogFilename = path_1.default.basename(changelogPath, path_1.default.extname(changelogPath));
+                const absoluteChangelogPath = path_1.default.resolve(changelogPath);
+                versionChangelogPath = path_1.default.join(path_1.default.dirname(absoluteChangelogPath), `${changelogFilename}-${version}${path_1.default.extname(changelogPath)}`);
+                (0, changelog_1.extractVersionChangelog)(absoluteChangelogPath, version, versionChangelogPath);
+                try {
+                    const extractedContent = this.executor.readFile(versionChangelogPath);
+                    core.info(`Created version-specific changelog at: ${versionChangelogPath}`);
+                    core.info(`Changelog content (${extractedContent.length} chars):`);
+                    this.info(extractedContent.substring(0, 200) + (extractedContent.length > 200 ? '...' : ''));
+                }
+                catch (error) {
+                    core.warning(`Could not read version-specific changelog: ${error.message}`);
+                }
+                changelogPath = versionChangelogPath;
             }
-            const changelogFilename = path_1.default.basename(changelogPath, path_1.default.extname(changelogPath));
-            const absoluteChangelogPath = path_1.default.resolve(changelogPath);
-            versionChangelogPath = path_1.default.join(path_1.default.dirname(absoluteChangelogPath), `${changelogFilename}-${version}${path_1.default.extname(changelogPath)}`);
-            (0, changelog_1.extractVersionChangelog)(absoluteChangelogPath, version, versionChangelogPath);
-            try {
-                const extractedContent = this.executor.readFile(versionChangelogPath);
-                core.info(`Created version-specific changelog at: ${versionChangelogPath}`);
-                core.info(`Changelog content (${extractedContent.length} chars):`);
-                this.info(extractedContent.substring(0, 200) + (extractedContent.length > 200 ? '...' : ''));
-            }
-            catch (error) {
-                core.warning(`Could not read version-specific changelog: ${error.message}`);
-            }
-            // Update changelogPath to use the version-specific file (absolute path)
-            changelogPath = versionChangelogPath;
             core.endGroup();
             // Lint opam files
             core.startGroup('Linting opam files');
@@ -30793,8 +30798,10 @@ local: ${config.local}
                 core.startGroup('Publishing to GitHub');
                 process.env.DUNE_RELEASE_DELEGATE = 'github-dune-release';
                 process.env.GITHUB_TOKEN = this.context.token;
-                this.info(`Publishing with changelog: ${changelogPath}`);
-                const publishArgs = ['--yes', `--change-log=${changelogPath}`];
+                const publishArgs = ['--yes'];
+                if (changelogPath) {
+                    publishArgs.push(`--change-log=${changelogPath}`);
+                }
                 if (buildDir) {
                     publishArgs.push(`--build-dir=${buildDir}`);
                 }
@@ -30811,7 +30818,10 @@ local: ${config.local}
                 core.endGroup();
             }
             core.startGroup(`Packaging opam release for ${packages}`);
-            const opamPkgArgs = ['pkg', '-p', packages, '--yes', `--change-log=${changelogPath}`];
+            const opamPkgArgs = ['pkg', '-p', packages, '--yes'];
+            if (changelogPath) {
+                opamPkgArgs.push(`--change-log=${changelogPath}`);
+            }
             if (buildDir) {
                 opamPkgArgs.push(`--build-dir=${buildDir}`);
             }
@@ -30831,7 +30841,10 @@ local: ${config.local}
                 process.env.DUNE_RELEASE_DELEGATE = 'github-dune-release';
                 process.env.GITHUB_TOKEN = this.context.token;
                 this.executor.chdir(this.context.workspace);
-                const opamSubmitArgs = ['submit', '-p', packages, '--yes', `--change-log=${changelogPath}`];
+                const opamSubmitArgs = ['submit', '-p', packages, '--yes'];
+                if (changelogPath) {
+                    opamSubmitArgs.push(`--change-log=${changelogPath}`);
+                }
                 if (buildDir) {
                     opamSubmitArgs.push(`--build-dir=${buildDir}`);
                 }
@@ -30948,7 +30961,8 @@ async function main() {
         }
         packagesArray = packagesArray.map(pkg => pkg.trim()).filter(pkg => pkg.length > 0);
         const packages = packagesArray.join(',');
-        const changelogPath = core.getInput('changelog') || './CHANGES.md';
+        const changelogInput = core.getInput('changelog');
+        const changelogPath = changelogInput && changelogInput.trim() ? changelogInput.trim() : './CHANGES.md';
         const token = core.getInput('github-token', { required: true });
         const toOpamRepository = core.getInput('to-opam-repository') !== 'false';
         const toGithubReleases = core.getInput('to-github-releases') !== 'false';
