@@ -82,8 +82,8 @@ jobs:
       package-one
       package-two
       package-three
-    changelog: './CHANGES.md'             # (required) Filename to extract PR descriptions and validate tag
     github-token: ${{ secrets.GH_TOKEN }} # (required) Personal token (classic) with `repo` and `workflow` scopes
+    changelog: './CHANGES.md'             # (optional) Filename to extract PR descriptions and validate tag
     verbose: true                         # Show detailed logs
     to-opam-repository: true              # Submit PR to opam-repository
     to-github-releases: true              # Create GitHub release
