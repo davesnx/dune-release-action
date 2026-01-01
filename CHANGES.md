@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.13
+
+- Don't run the validation when changelog isn't set
+
+## v0.2.12
+
+- Add logging in auth
+
 ## v0.2.11
 
 - Make changelog optional - release succeeds even if changelog file is missing [@davesnx](https://github.com/davesnx)

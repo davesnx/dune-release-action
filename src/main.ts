@@ -360,45 +360,48 @@ local: ${config.local}
 
       this.info(`Starting release for version ${version}`);
 
-      core.startGroup('Validating changelog');
-      if (!changelogPath || !this.executor.fileExists(changelogPath)) {
-        core.warning(`Changelog file not found: ${changelogPath || '(not specified)'}`);
-        core.warning('Proceeding without changelog - release will succeed but no changelog will be included');
-        changelogPath = null;
+      if (changelogPath) {
+        core.startGroup('Validating changelog');
+        if (!this.executor.fileExists(changelogPath)) {
+          core.warning(`Changelog file not found: ${changelogPath}`);
+          core.warning('Proceeding without changelog - release will succeed but no changelog will be included');
+          changelogPath = null;
+        } else {
+          const validation = validateChangelog(changelogPath, version);
+
+          if (validation.warnings.length > 0) {
+            validation.warnings.forEach(warning => core.warning(warning));
+          }
+
+          if (!validation.valid) {
+            validation.errors.forEach(error => core.error(error));
+            throw new Error('Changelog validation failed. Please fix the issues and try again.');
+          }
+
+          const changelogFilename = Path.basename(changelogPath, Path.extname(changelogPath));
+          const absoluteChangelogPath = Path.resolve(changelogPath);
+          versionChangelogPath = Path.join(
+            Path.dirname(absoluteChangelogPath),
+            `${changelogFilename}-${version}${Path.extname(changelogPath)}`
+          );
+
+          extractVersionChangelog(absoluteChangelogPath, version, versionChangelogPath);
+
+          try {
+            const extractedContent = this.executor.readFile(versionChangelogPath);
+            core.info(`Created version-specific changelog at: ${versionChangelogPath}`);
+            core.info(`Changelog content (${extractedContent.length} chars):`);
+            this.info(extractedContent.substring(0, 200) + (extractedContent.length > 200 ? '...' : ''));
+          } catch (error: any) {
+            core.warning(`Could not read version-specific changelog: ${error.message}`);
+          }
+
+          changelogPath = versionChangelogPath;
+        }
+        core.endGroup();
       } else {
-        const validation = validateChangelog(changelogPath, version);
-
-        if (validation.warnings.length > 0) {
-          validation.warnings.forEach(warning => core.warning(warning));
-        }
-
-        if (!validation.valid) {
-          validation.errors.forEach(error => core.error(error));
-          throw new Error('Changelog validation failed. Please fix the issues and try again.');
-        }
-
-        const changelogFilename = Path.basename(changelogPath, Path.extname(changelogPath));
-        const absoluteChangelogPath = Path.resolve(changelogPath);
-        versionChangelogPath = Path.join(
-          Path.dirname(absoluteChangelogPath),
-          `${changelogFilename}-${version}${Path.extname(changelogPath)}`
-        );
-
-        extractVersionChangelog(absoluteChangelogPath, version, versionChangelogPath);
-
-        try {
-          const extractedContent = this.executor.readFile(versionChangelogPath);
-          core.info(`Created version-specific changelog at: ${versionChangelogPath}`);
-          core.info(`Changelog content (${extractedContent.length} chars):`);
-          this.info(extractedContent.substring(0, 200) + (extractedContent.length > 200 ? '...' : ''));
-        } catch (error: any) {
-          core.warning(`Could not read version-specific changelog: ${error.message}`);
-        }
-
-        changelogPath = versionChangelogPath;
+        core.info('No changelog specified - skipping changelog validation and processing');
       }
-
-      core.endGroup();
 
       core.startGroup('Linting opam files');
       this.runDuneRelease('lint', ['-p', packages]);
@@ -450,10 +453,7 @@ local: ${config.local}
           const message = error.message || error.toString();
           core.error(`Failed to publish GitHub release: ${message}`);
           core.error('This error occurred while running: dune-release publish');
-          if (message.includes('Bad credentials') || message.includes('401') || message.includes('403')) {
-            core.error('GitHub authentication failed. Check that your token has the required permissions.');
-          }
-          throw error;
+          handleAuthError(error, 'dune-release publish');
         }
         core.endGroup();
       } else {
@@ -505,10 +505,7 @@ local: ${config.local}
           const message = error.message || error.toString();
           core.error(`Failed to submit to opam repository: ${message}`);
           core.error('This error occurred while running: dune-release opam submit');
-          if (message.includes('Bad credentials') || message.includes('401') || message.includes('403')) {
-            core.error('GitHub authentication failed. Check that your token has the required permissions.');
-          }
-          throw error;
+          handleAuthError(error, 'dune-release opam submit');
         }
         core.endGroup();
       } else {
@@ -605,7 +602,7 @@ local: ${config.local}
 
 type Input = {
   packages: string;
-  changelogPath: string;
+  changelogPath: string | null;
   token: string;
   verbose: boolean;
   toOpamRepository: boolean;
@@ -615,6 +612,41 @@ type Input = {
   buildDir: string | undefined;
   publishMessage: string | undefined;
   dryRun: boolean;
+}
+
+/**
+ * Check if an error is a GitHub authentication error and throw a helpful message
+ */
+function handleAuthError(error: any, context: string = ''): never {
+  const message = error.message || error.toString();
+  const status = error.status || error.statusCode;
+  const isAuthError =
+    status === 401 ||
+    status === 403 ||
+    message.includes('Bad credentials') ||
+    message.includes('401') ||
+    message.includes('403') ||
+    message.includes('authentication failed') ||
+    message.includes('Invalid username or token');
+
+  if (isAuthError) {
+    const contextMsg = context ? ` (${context})` : '';
+    throw new Error(
+      `GitHub authentication failed${contextMsg}: ${message}\n\n` +
+      `This usually means:\n` +
+      `  - The token is invalid or expired\n` +
+      `  - The token doesn't have the required permissions\n\n` +
+      `Required permissions for this action:\n` +
+      `  - contents: write (for creating releases)\n` +
+      `  - pull-requests: write (for submitting to opam-repository)\n\n` +
+      `If using GITHUB_TOKEN, ensure your workflow has:\n` +
+      `  permissions:\n` +
+      `    contents: write\n` +
+      `    pull-requests: write\n\n` +
+      `If using a PAT, ensure it has 'repo' scope.`
+    );
+  }
+  throw error;
 }
 
 const parseInput = (): Input => {
@@ -632,7 +664,7 @@ const parseInput = (): Input => {
   const packages = packagesArray.map(pkg => pkg.trim()).filter(pkg => pkg.length > 0).join(',');
 
   const changelogInput = core.getInput('changelog');
-  const changelogPath = changelogInput && changelogInput.trim() ? changelogInput.trim() : './CHANGES.md';
+  const changelogPath = changelogInput && changelogInput.trim() ? changelogInput.trim() : null;
 
   const token = core.getInput('github-token', { required: true });
 
@@ -678,24 +710,7 @@ async function main() {
       const { data: authenticatedUser } = await octokit.rest.users.getAuthenticated();
       effectiveUser = authenticatedUser.login;
     } catch (authError: any) {
-      const isAuthError = authError.status === 401 || authError.message?.includes('Bad credentials');
-      if (isAuthError) {
-        throw new Error(
-          `GitHub authentication failed: ${authError.message}\n\n` +
-          `This usually means:\n` +
-          `  - The token is invalid or expired\n` +
-          `  - The token doesn't have the required permissions\n\n` +
-          `Required permissions for this action:\n` +
-          `  - contents: write (for creating releases)\n` +
-          `  - pull-requests: write (for submitting to opam-repository)\n\n` +
-          `If using GITHUB_TOKEN, ensure your workflow has:\n` +
-          `  permissions:\n` +
-          `    contents: write\n` +
-          `    pull-requests: write\n\n` +
-          `If using a PAT, ensure it has 'repo' scope.`
-        );
-      }
-      throw authError;
+      handleAuthError(authError, 'initial authentication check');
     }
     const opamRepoFork = `${effectiveUser}/opam-repository`;
     const defaultOpamPath = process.env.RUNNER_TEMP ? '/home/runner/git/opam-repository' : '/tmp/opam-repository-test';
