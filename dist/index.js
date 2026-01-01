@@ -30675,7 +30675,6 @@ local: ${config.local}
         const gitConfig = `https://x-access-token:${this.context.token}@github.com/`;
         this.exec(`git config --global url."${gitConfig}".insteadOf "https://github.com/"`, { silent: true });
         this.exec(`git config --global url."${gitConfig}".insteadOf "git@github.com:"`, { silent: true });
-        // Check if remote tag exists before deleting
         try {
             const remoteTags = this.exec('git ls-remote --tags origin', { silent: true });
             const remoteTagExists = remoteTags.includes(`refs/tags/${tagName}`);
@@ -30690,7 +30689,6 @@ local: ${config.local}
         catch (error) {
             core.warning(`Could not delete remote tag ${tagName}: ${error.message}`);
         }
-        // Check if local tag exists before deleting
         try {
             const localTags = this.exec('git tag -l', { silent: true });
             const localTagExists = localTags.split('\n').includes(tagName);
@@ -30713,11 +30711,8 @@ local: ${config.local}
     async runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository, includeSubmodules = false, opamRepository = { owner: 'ocaml', repo: 'opam-repository' }, buildDir, publishMessage, dryRun = false) {
         let versionChangelogPath = null;
         try {
-            // Check dependencies first
             this.checkDependencies();
-            // Validate the tag is new
             this.validateNewTag();
-            // Setup
             this.configureGit();
             const version = this.extractVersion();
             if (dryRun) {
@@ -30735,46 +30730,47 @@ local: ${config.local}
                 }
             }
             this.info(`Starting release for version ${version}`);
-            core.startGroup('Validating changelog');
-            if (!changelogPath || !this.executor.fileExists(changelogPath)) {
-                core.warning(`Changelog file not found: ${changelogPath || '(not specified)'}`);
-                core.warning('Proceeding without changelog - release will succeed but no changelog will be included');
-                changelogPath = null;
+            if (changelogPath) {
+                core.startGroup('Validating changelog');
+                if (!this.executor.fileExists(changelogPath)) {
+                    core.warning(`Changelog file not found: ${changelogPath}`);
+                    core.warning('Proceeding without changelog - release will succeed but no changelog will be included');
+                    changelogPath = null;
+                }
+                else {
+                    const validation = (0, changelog_1.validateChangelog)(changelogPath, version);
+                    if (validation.warnings.length > 0) {
+                        validation.warnings.forEach(warning => core.warning(warning));
+                    }
+                    if (!validation.valid) {
+                        validation.errors.forEach(error => core.error(error));
+                        throw new Error('Changelog validation failed. Please fix the issues and try again.');
+                    }
+                    const changelogFilename = path_1.default.basename(changelogPath, path_1.default.extname(changelogPath));
+                    const absoluteChangelogPath = path_1.default.resolve(changelogPath);
+                    versionChangelogPath = path_1.default.join(path_1.default.dirname(absoluteChangelogPath), `${changelogFilename}-${version}${path_1.default.extname(changelogPath)}`);
+                    (0, changelog_1.extractVersionChangelog)(absoluteChangelogPath, version, versionChangelogPath);
+                    try {
+                        const extractedContent = this.executor.readFile(versionChangelogPath);
+                        core.info(`Created version-specific changelog at: ${versionChangelogPath}`);
+                        core.info(`Changelog content (${extractedContent.length} chars):`);
+                        this.info(extractedContent.substring(0, 200) + (extractedContent.length > 200 ? '...' : ''));
+                    }
+                    catch (error) {
+                        core.warning(`Could not read version-specific changelog: ${error.message}`);
+                    }
+                    changelogPath = versionChangelogPath;
+                }
+                core.endGroup();
             }
             else {
-                const validation = (0, changelog_1.validateChangelog)(changelogPath, version);
-                if (validation.warnings.length > 0) {
-                    validation.warnings.forEach(warning => core.warning(warning));
-                }
-                if (!validation.valid) {
-                    validation.errors.forEach(error => core.error(error));
-                    throw new Error('Changelog validation failed. Please fix the issues and try again.');
-                }
-                const changelogFilename = path_1.default.basename(changelogPath, path_1.default.extname(changelogPath));
-                const absoluteChangelogPath = path_1.default.resolve(changelogPath);
-                versionChangelogPath = path_1.default.join(path_1.default.dirname(absoluteChangelogPath), `${changelogFilename}-${version}${path_1.default.extname(changelogPath)}`);
-                (0, changelog_1.extractVersionChangelog)(absoluteChangelogPath, version, versionChangelogPath);
-                try {
-                    const extractedContent = this.executor.readFile(versionChangelogPath);
-                    core.info(`Created version-specific changelog at: ${versionChangelogPath}`);
-                    core.info(`Changelog content (${extractedContent.length} chars):`);
-                    this.info(extractedContent.substring(0, 200) + (extractedContent.length > 200 ? '...' : ''));
-                }
-                catch (error) {
-                    core.warning(`Could not read version-specific changelog: ${error.message}`);
-                }
-                changelogPath = versionChangelogPath;
+                core.info('No changelog specified - skipping changelog validation and processing');
             }
-            core.endGroup();
-            // Lint opam files
             core.startGroup('Linting opam files');
             this.runDuneRelease('lint', ['-p', packages]);
             core.endGroup();
-            // Setup dune-release config
             this.setupDuneReleaseConfig(duneConfig);
-            // Clone opam repository from upstream (always latest state)
             this.cloneOpamRepository(duneConfig.local, opamRepository);
-            // Distribute release archive
             core.startGroup('Distributing release archive');
             const distribArgs = ['-p', packages, '--skip-tests', '--skip-lint'];
             if (includeSubmodules) {
@@ -30785,7 +30781,6 @@ local: ${config.local}
             }
             this.runDuneRelease('distrib', distribArgs);
             core.endGroup();
-            // Publish to GitHub (conditional)
             const tagName = this.context.ref.replace('refs/tags/', '');
             const githubReleaseUrl = `https://github.com/${this.context.repository}/releases/tag/${tagName}`;
             if (dryRun) {
@@ -30796,20 +30791,30 @@ local: ${config.local}
             }
             else if (toGithubReleases) {
                 core.startGroup('Publishing to GitHub');
-                process.env.DUNE_RELEASE_DELEGATE = 'github-dune-release';
-                process.env.GITHUB_TOKEN = this.context.token;
-                const publishArgs = ['--yes'];
-                if (changelogPath) {
-                    publishArgs.push(`--change-log=${changelogPath}`);
+                try {
+                    process.env.DUNE_RELEASE_DELEGATE = 'github-dune-release';
+                    process.env.GITHUB_TOKEN = this.context.token;
+                    this.info('Setting GITHUB_TOKEN environment variable for dune-release');
+                    const publishArgs = ['--yes'];
+                    if (changelogPath) {
+                        publishArgs.push(`--change-log=${changelogPath}`);
+                    }
+                    if (buildDir) {
+                        publishArgs.push(`--build-dir=${buildDir}`);
+                    }
+                    if (publishMessage) {
+                        publishArgs.push(`--msg=${publishMessage}`);
+                    }
+                    this.info(`Running: dune-release publish ${publishArgs.join(' ')}`);
+                    this.runDuneRelease('publish', publishArgs);
+                    core.setOutput('github-release-url', githubReleaseUrl);
                 }
-                if (buildDir) {
-                    publishArgs.push(`--build-dir=${buildDir}`);
+                catch (error) {
+                    const message = error.message || error.toString();
+                    core.error(`Failed to publish GitHub release: ${message}`);
+                    core.error('This error occurred while running: dune-release publish');
+                    handleAuthError(error, 'dune-release publish');
                 }
-                if (publishMessage) {
-                    publishArgs.push(`--msg=${publishMessage}`);
-                }
-                this.runDuneRelease('publish', publishArgs);
-                core.setOutput('github-release-url', githubReleaseUrl);
                 core.endGroup();
             }
             else {
@@ -30838,20 +30843,30 @@ local: ${config.local}
             }
             else if (toOpamRepository) {
                 core.startGroup('Submitting to opam repository');
-                process.env.DUNE_RELEASE_DELEGATE = 'github-dune-release';
-                process.env.GITHUB_TOKEN = this.context.token;
-                this.executor.chdir(this.context.workspace);
-                const opamSubmitArgs = ['submit', '-p', packages, '--yes'];
-                if (changelogPath) {
-                    opamSubmitArgs.push(`--change-log=${changelogPath}`);
+                try {
+                    process.env.DUNE_RELEASE_DELEGATE = 'github-dune-release';
+                    process.env.GITHUB_TOKEN = this.context.token;
+                    this.info('Setting GITHUB_TOKEN environment variable for dune-release');
+                    this.executor.chdir(this.context.workspace);
+                    const opamSubmitArgs = ['submit', '-p', packages, '--yes'];
+                    if (changelogPath) {
+                        opamSubmitArgs.push(`--change-log=${changelogPath}`);
+                    }
+                    if (buildDir) {
+                        opamSubmitArgs.push(`--build-dir=${buildDir}`);
+                    }
+                    opamSubmitArgs.push(`--opam-repo=${opamRepository.owner}/${opamRepository.repo}`);
+                    opamSubmitArgs.push(`--remote-repo=git@github.com:${effectiveUser}/opam-repository`);
+                    this.info(`Running: dune-release opam ${opamSubmitArgs.join(' ')}`);
+                    this.runDuneRelease('opam', opamSubmitArgs);
+                    core.setOutput('opam-pr-url', opamPrUrl);
                 }
-                if (buildDir) {
-                    opamSubmitArgs.push(`--build-dir=${buildDir}`);
+                catch (error) {
+                    const message = error.message || error.toString();
+                    core.error(`Failed to submit to opam repository: ${message}`);
+                    core.error('This error occurred while running: dune-release opam submit');
+                    handleAuthError(error, 'dune-release opam submit');
                 }
-                opamSubmitArgs.push(`--opam-repo=${opamRepository.owner}/${opamRepository.repo}`);
-                opamSubmitArgs.push(`--remote-repo=git@github.com:${effectiveUser}/opam-repository`);
-                this.runDuneRelease('opam', opamSubmitArgs);
-                core.setOutput('opam-pr-url', opamPrUrl);
                 core.endGroup();
             }
             else {
@@ -30943,40 +30958,73 @@ local: ${config.local}
     }
 }
 exports.ReleaseManager = ReleaseManager;
+/**
+ * Check if an error is a GitHub authentication error and throw a helpful message
+ */
+function handleAuthError(error, context = '') {
+    const message = error.message || error.toString();
+    const status = error.status || error.statusCode;
+    const isAuthError = status === 401 ||
+        status === 403 ||
+        message.includes('Bad credentials') ||
+        message.includes('401') ||
+        message.includes('403') ||
+        message.includes('authentication failed') ||
+        message.includes('Invalid username or token');
+    if (isAuthError) {
+        const contextMsg = context ? ` (${context})` : '';
+        throw new Error(`GitHub authentication failed${contextMsg}: ${message}\n\n` +
+            `This usually means:\n` +
+            `  - The token is invalid or expired\n` +
+            `  - The token doesn't have the required permissions\n\n` +
+            `Required permissions for this action:\n` +
+            `  - contents: write (for creating releases)\n` +
+            `  - pull-requests: write (for submitting to opam-repository)\n\n` +
+            `If using GITHUB_TOKEN, ensure your workflow has:\n` +
+            `  permissions:\n` +
+            `    contents: write\n` +
+            `    pull-requests: write\n\n` +
+            `If using a PAT, ensure it has 'repo' scope.`);
+    }
+    throw error;
+}
+const parseInput = () => {
+    const packagesInput = core.getInput('packages', { required: true }).trim();
+    let packagesArray;
+    if (packagesInput.startsWith('[') && packagesInput.endsWith(']')) {
+        packagesArray = JSON.parse(packagesInput);
+    }
+    else if (packagesInput.includes('\n')) {
+        packagesArray = packagesInput.split('\n');
+    }
+    else if (packagesInput.includes(',')) {
+        packagesArray = packagesInput.split(',');
+    }
+    else {
+        packagesArray = [packagesInput];
+    }
+    const packages = packagesArray.map(pkg => pkg.trim()).filter(pkg => pkg.length > 0).join(',');
+    const changelogInput = core.getInput('changelog');
+    const changelogPath = changelogInput && changelogInput.trim() ? changelogInput.trim() : null;
+    const token = core.getInput('github-token', { required: true });
+    const toOpamRepository = core.getInput('to-opam-repository') !== 'false';
+    const toGithubReleases = core.getInput('to-github-releases') !== 'false';
+    const verbose = core.getInput('verbose') === 'true';
+    const includeSubmodules = core.getInput('include-submodules') === 'true';
+    const opamRepositoryInput = core.getInput('opam-repository') || 'ocaml/opam-repository';
+    const buildDir = core.getInput('build-dir') || undefined;
+    const publishMessage = core.getInput('publish-message') || undefined;
+    const dryRun = core.getInput('dry-run') === 'true';
+    const [opamOwner, opamRepo] = opamRepositoryInput.split('/');
+    if (!opamOwner || !opamRepo) {
+        throw new Error(`Invalid opam-repository format: ${opamRepositoryInput}. Expected: owner/repo`);
+    }
+    const opamRepository = { owner: opamOwner, repo: opamRepo };
+    return { packages, verbose, changelogPath, token, toOpamRepository, toGithubReleases, includeSubmodules, opamRepository, buildDir, publishMessage, dryRun };
+};
 async function main() {
     try {
-        const packagesInput = core.getInput('packages', { required: true }).trim();
-        let packagesArray;
-        if (packagesInput.startsWith('[') && packagesInput.endsWith(']')) {
-            packagesArray = JSON.parse(packagesInput);
-        }
-        else if (packagesInput.includes('\n')) {
-            packagesArray = packagesInput.split('\n');
-        }
-        else if (packagesInput.includes(',')) {
-            packagesArray = packagesInput.split(',');
-        }
-        else {
-            packagesArray = [packagesInput];
-        }
-        packagesArray = packagesArray.map(pkg => pkg.trim()).filter(pkg => pkg.length > 0);
-        const packages = packagesArray.join(',');
-        const changelogInput = core.getInput('changelog');
-        const changelogPath = changelogInput && changelogInput.trim() ? changelogInput.trim() : './CHANGES.md';
-        const token = core.getInput('github-token', { required: true });
-        const toOpamRepository = core.getInput('to-opam-repository') !== 'false';
-        const toGithubReleases = core.getInput('to-github-releases') !== 'false';
-        const verbose = core.getInput('verbose') === 'true';
-        const includeSubmodules = core.getInput('include-submodules') === 'true';
-        const opamRepositoryInput = core.getInput('opam-repository') || 'ocaml/opam-repository';
-        const buildDir = core.getInput('build-dir') || undefined;
-        const publishMessage = core.getInput('publish-message') || undefined;
-        const dryRun = core.getInput('dry-run') === 'true';
-        const [opamOwner, opamRepo] = opamRepositoryInput.split('/');
-        if (!opamOwner || !opamRepo) {
-            throw new Error(`Invalid opam-repository format: ${opamRepositoryInput}. Expected: owner/repo`);
-        }
-        const opamRepository = { owner: opamOwner, repo: opamRepo };
+        const { packages, verbose, changelogPath, token, toOpamRepository, toGithubReleases, includeSubmodules, opamRepository, buildDir, publishMessage, dryRun } = parseInput();
         const testRefOverride = process.env.TEST_OVERRIDE_GITHUB_REF || '';
         const ref = testRefOverride || process.env.GITHUB_REF || github.context.ref;
         if (!ref.startsWith('refs/tags/')) {
@@ -30986,8 +31034,14 @@ async function main() {
             core.warning(`Using TEST_OVERRIDE_GITHUB_REF: ${testRefOverride}`);
         }
         const octokit = github.getOctokit(token);
-        const { data: authenticatedUser } = await octokit.rest.users.getAuthenticated();
-        const effectiveUser = authenticatedUser.login;
+        let effectiveUser;
+        try {
+            const { data: authenticatedUser } = await octokit.rest.users.getAuthenticated();
+            effectiveUser = authenticatedUser.login;
+        }
+        catch (authError) {
+            handleAuthError(authError, 'initial authentication check');
+        }
         const opamRepoFork = `${effectiveUser}/opam-repository`;
         const defaultOpamPath = process.env.RUNNER_TEMP ? '/home/runner/git/opam-repository' : '/tmp/opam-repository-test';
         const opamRepoLocal = core.getInput('opam-repo-local') || defaultOpamPath;

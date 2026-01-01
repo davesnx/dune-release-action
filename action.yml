@@ -10,9 +10,8 @@ inputs:
     description: 'Package name(s) for release. Supports: single package, YAML list, JSON array, or comma-separated string'
     required: true
   changelog:
-    description: 'Path to changelog file'
+    description: 'Path to changelog file. If not provided, no changelog validation or processing will be performed.'
     required: false
-    default: './CHANGES.md'
   github-token:
     description: 'GitHub token for API access'
     required: true
