@@ -12,7 +12,7 @@ Automatically release OCaml packages to opam using `dune-release` in GitHub Acti
    - Go to https://github.com/ocaml/opam-repository/fork
    - Create a fork (use default settings)
 
-2. **GitHub Token**: Create a Personal Access Token (classic) with these scopes:
+2. **GitHub Token**: Create a [Personal Access Token (classic)](https://github.com/settings/tokens) with these scopes:
    - ✅ `repo` - Full control of repositories
    - ✅ `workflow` - Update GitHub Action workflows
    - Add it to your repository secrets as `GH_TOKEN`
