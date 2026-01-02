@@ -710,7 +710,15 @@ async function main() {
       const { data: authenticatedUser } = await octokit.rest.users.getAuthenticated();
       effectiveUser = authenticatedUser.login;
     } catch (authError: any) {
-      handleAuthError(authError, 'initial authentication check');
+      // The GITHUB_TOKEN doesn't have permission to access /user endpoint
+      // Fall back to using the repository owner as the effective user
+      const repoOwner = github.context.repo.owner;
+      if (repoOwner) {
+        core.warning(`Could not get authenticated user (this is normal with GITHUB_TOKEN). Using repository owner: ${repoOwner}`);
+        effectiveUser = repoOwner;
+      } else {
+        handleAuthError(authError, 'initial authentication check');
+      }
     }
     const opamRepoFork = `${effectiveUser}/opam-repository`;
     const defaultOpamPath = process.env.RUNNER_TEMP ? '/home/runner/git/opam-repository' : '/tmp/opam-repository-test';

@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.2.14
+
+- Fix "Resource not accessible by integration" error by falling back to repository owner when GITHUB_TOKEN lacks user scope [@davesnx](https://github.com/davesnx)
+
 ## v0.2.13
 
 - Don't run the validation when changelog isn't set
