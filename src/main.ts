@@ -37,6 +37,8 @@ interface Executor {
   cwd(): string;
 }
 
+const DEFAULT_CHANGELOG_PATH = './CHANGES.md';
+
 const defaultExecutor: Executor = {
   exec(command: string, options: { silent?: boolean; stdio?: 'pipe' | 'inherit' } = {}): string {
     const result = execSync(command, {
@@ -663,8 +665,8 @@ const parseInput = (): Input => {
   }
   const packages = packagesArray.map(pkg => pkg.trim()).filter(pkg => pkg.length > 0).join(',');
 
-  const changelogInput = core.getInput('changelog');
-  const changelogPath = changelogInput && changelogInput.trim() ? changelogInput.trim() : null;
+  const changelogInput = core.getInput('changelog').trim();
+  const changelogPath = changelogInput || DEFAULT_CHANGELOG_PATH;
 
   const token = core.getInput('github-token', { required: true });
 
@@ -768,6 +770,13 @@ if (!isTest) {
   main();
 }
 
-export { ReleaseManager, ReleaseConfig, GitHubContext, Executor, defaultExecutor, OpamRepository };
+export {
+  ReleaseManager,
+  ReleaseConfig,
+  GitHubContext,
+  Executor,
+  defaultExecutor,
+  OpamRepository,
+  DEFAULT_CHANGELOG_PATH
+};
 export default main;
-

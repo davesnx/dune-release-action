@@ -1,6 +1,14 @@
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert';
-import { ReleaseManager, GitHubContext, ReleaseConfig, Executor } from './main';
+import Fs from 'fs';
+import Path from 'path';
+import {
+  ReleaseManager,
+  GitHubContext,
+  ReleaseConfig,
+  Executor,
+  DEFAULT_CHANGELOG_PATH
+} from './main';
 
 // Mock executor for testing
 function createMockExecutor(overrides: Partial<{
@@ -423,6 +431,10 @@ describe('Dry-run mode', () => {
 // ============================================================================
 
 describe('Package input parsing', () => {
+  test('defaults changelog path to CHANGES.md', () => {
+    assert.strictEqual(DEFAULT_CHANGELOG_PATH, './CHANGES.md');
+  });
+
   test('parses single package', () => {
     const packagesInput = 'my-package';
     let packagesArray: string[];
@@ -545,6 +557,19 @@ describe('Opam repository input parsing', () => {
 });
 
 // ============================================================================
+// Action Metadata Tests
+// ============================================================================
+
+describe('Action metadata', () => {
+  test('declares the changelog input default', () => {
+    const actionYmlPath = Path.join(process.cwd(), 'action.yml');
+    const actionYml = Fs.readFileSync(actionYmlPath, 'utf-8');
+
+    assert.ok(actionYml.includes("default: './CHANGES.md'"));
+  });
+});
+
+// ============================================================================
 // Error Message Patterns Tests
 // ============================================================================
 
@@ -569,4 +594,3 @@ describe('Error message detection', () => {
     assert.ok(errorMessage2.includes('Invalid username or token'));
   });
 });
-

@@ -30445,7 +30445,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.defaultExecutor = exports.ReleaseManager = void 0;
+exports.DEFAULT_CHANGELOG_PATH = exports.defaultExecutor = exports.ReleaseManager = void 0;
 const core = __importStar(__nccwpck_require__(7484));
 const github = __importStar(__nccwpck_require__(3228));
 const child_process_1 = __nccwpck_require__(5317);
@@ -30453,6 +30453,8 @@ const fs_1 = __importDefault(__nccwpck_require__(9896));
 const path_1 = __importDefault(__nccwpck_require__(6928));
 const os_1 = __importDefault(__nccwpck_require__(857));
 const changelog_1 = __nccwpck_require__(7900);
+const DEFAULT_CHANGELOG_PATH = './CHANGES.md';
+exports.DEFAULT_CHANGELOG_PATH = DEFAULT_CHANGELOG_PATH;
 const defaultExecutor = {
     exec(command, options = {}) {
         const result = (0, child_process_1.execSync)(command, {
@@ -31004,8 +31006,8 @@ const parseInput = () => {
         packagesArray = [packagesInput];
     }
     const packages = packagesArray.map(pkg => pkg.trim()).filter(pkg => pkg.length > 0).join(',');
-    const changelogInput = core.getInput('changelog');
-    const changelogPath = changelogInput && changelogInput.trim() ? changelogInput.trim() : null;
+    const changelogInput = core.getInput('changelog').trim();
+    const changelogPath = changelogInput || DEFAULT_CHANGELOG_PATH;
     const token = core.getInput('github-token', { required: true });
     const toOpamRepository = core.getInput('to-opam-repository') !== 'false';
     const toGithubReleases = core.getInput('to-github-releases') !== 'false';
