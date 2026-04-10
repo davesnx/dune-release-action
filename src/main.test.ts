@@ -1,6 +1,9 @@
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert';
 import { ReleaseManager, GitHubContext, ReleaseConfig, Executor, parsePackagesInput } from './core';
+import Fs from 'fs';
+import Path from 'path';
+import { DEFAULT_CHANGELOG_PATH } from './main';
 
 // Mock executor for testing
 function createMockExecutor(overrides: Partial<{
@@ -469,6 +472,10 @@ describe('Lint mode', () => {
 // ============================================================================
 
 describe('Package input parsing', () => {
+  test('defaults changelog path to CHANGES.md', () => {
+    assert.strictEqual(DEFAULT_CHANGELOG_PATH, './CHANGES.md');
+  });
+
   test('parses single package', () => {
     assert.strictEqual(parsePackagesInput('my-package'), 'my-package');
   });
@@ -524,6 +531,19 @@ describe('Opam repository input parsing', () => {
 
     // This should be detected as invalid
     assert.ok(!opamOwner || !opamRepo || opamRepo === undefined);
+  });
+});
+
+// ============================================================================
+// Action Metadata Tests
+// ============================================================================
+
+describe('Action metadata', () => {
+  test('declares the changelog input default', () => {
+    const actionYmlPath = Path.join(process.cwd(), 'action.yml');
+    const actionYml = Fs.readFileSync(actionYmlPath, 'utf-8');
+
+    assert.ok(actionYml.includes("default: './CHANGES.md'"));
   });
 });
 

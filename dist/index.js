@@ -31055,13 +31055,15 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.parsePackagesInput = exports.defaultExecutor = exports.ReleaseManager = exports.DEFAULT_CHANGELOG_PATH = void 0;
 const core = __importStar(__nccwpck_require__(7484));
 const github = __importStar(__nccwpck_require__(3228));
 const core_1 = __nccwpck_require__(828);
+exports.DEFAULT_CHANGELOG_PATH = './CHANGES.md';
 const parseInput = () => {
     const packages = (0, core_1.parsePackagesInput)(core.getInput('packages', { required: true }));
-    const changelogInput = core.getInput('changelog');
-    const changelogPath = changelogInput && changelogInput.trim() ? changelogInput.trim() : null;
+    const changelogInput = core.getInput('changelog').trim();
+    const changelogPath = changelogInput || exports.DEFAULT_CHANGELOG_PATH;
     const token = core.getInput('github-token', { required: true });
     const toOpamRepository = core.getInput('to-opam-repository') !== 'false';
     const toGithubReleases = core.getInput('to-github-releases') !== 'false';
@@ -31096,8 +31098,6 @@ async function main() {
             effectiveUser = authenticatedUser.login;
         }
         catch (authError) {
-            // The GITHUB_TOKEN doesn't have permission to access /user endpoint
-            // Fall back to using the repository owner as the effective user
             const repoOwner = github.context.repo.owner;
             if (repoOwner) {
                 core.warning(`Could not get authenticated user (this is normal with GITHUB_TOKEN). Using repository owner: ${repoOwner}`);
@@ -31152,6 +31152,10 @@ const isTest = process.env.NODE_TEST_CONTEXT !== undefined || process.argv.some(
 if (!isTest) {
     main();
 }
+var core_2 = __nccwpck_require__(828);
+Object.defineProperty(exports, "ReleaseManager", ({ enumerable: true, get: function () { return core_2.ReleaseManager; } }));
+Object.defineProperty(exports, "defaultExecutor", ({ enumerable: true, get: function () { return core_2.defaultExecutor; } }));
+Object.defineProperty(exports, "parsePackagesInput", ({ enumerable: true, get: function () { return core_2.parsePackagesInput; } }));
 exports["default"] = main;
 
 

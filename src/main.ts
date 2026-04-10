@@ -4,6 +4,8 @@ import * as core from '@actions/core';
 import * as github from '@actions/github';
 import { GitHubContext, OpamRepository, ReleaseConfig, ReleaseManager, parsePackagesInput } from './core';
 
+export const DEFAULT_CHANGELOG_PATH = './CHANGES.md';
+
 type Input = {
   packages: string;
   changelogPath: string | null;
@@ -21,8 +23,8 @@ type Input = {
 const parseInput = (): Input => {
   const packages = parsePackagesInput(core.getInput('packages', { required: true }));
 
-  const changelogInput = core.getInput('changelog');
-  const changelogPath = changelogInput && changelogInput.trim() ? changelogInput.trim() : null;
+  const changelogInput = core.getInput('changelog').trim();
+  const changelogPath = changelogInput || DEFAULT_CHANGELOG_PATH;
 
   const token = core.getInput('github-token', { required: true });
 
@@ -68,8 +70,6 @@ async function main() {
       const { data: authenticatedUser } = await octokit.rest.users.getAuthenticated();
       effectiveUser = authenticatedUser.login;
     } catch (authError: any) {
-      // The GITHUB_TOKEN doesn't have permission to access /user endpoint
-      // Fall back to using the repository owner as the effective user
       const repoOwner = github.context.repo.owner;
       if (repoOwner) {
         core.warning(`Could not get authenticated user (this is normal with GITHUB_TOKEN). Using repository owner: ${repoOwner}`);
@@ -126,4 +126,5 @@ if (!isTest) {
   main();
 }
 
+export { ReleaseManager, ReleaseConfig, GitHubContext, Executor, defaultExecutor, OpamRepository, parsePackagesInput } from './core';
 export default main;
