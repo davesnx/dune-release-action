@@ -1,0 +1,19 @@
+name: 'dune-release-lint'
+description: 'Lint opam packages with dune-release in GitHub Actions'
+author: 'davesnx'
+branding:
+  icon: 'package'
+  color: 'orange'
+
+inputs:
+  packages:
+    description: 'Package name(s) to lint. Supports: single package, YAML list, JSON array, or comma-separated string'
+    required: true
+
+outputs:
+  lint-status:
+    description: 'Status of the lint run (success/failed)'
+
+runs:
+  using: 'node20'
+  main: 'dist/index.js'

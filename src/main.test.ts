@@ -1,6 +1,6 @@
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert';
-import { ReleaseManager, GitHubContext, ReleaseConfig, Executor } from './main';
+import { ReleaseManager, GitHubContext, ReleaseConfig, Executor, parsePackagesInput } from './core';
 
 // Mock executor for testing
 function createMockExecutor(overrides: Partial<{
@@ -419,98 +419,81 @@ describe('Dry-run mode', () => {
 });
 
 // ============================================================================
+// Lint Mode Tests
+// ============================================================================
+
+describe('Lint mode', () => {
+  test('runLint succeeds without tag or token', () => {
+    const mockExecutor = createMockExecutor({
+      execResults: new Map([
+        ['opam --version', '2.1.0'],
+        ['dune-release --version', '2.0.0'],
+        ['dune-release lint', 'Lint passed'],
+      ])
+    });
+
+    const context = createTestContext({ ref: 'refs/heads/main', token: '' });
+    const manager = new ReleaseManager(context, false, mockExecutor);
+
+    manager.runLint('pkg-one,pkg-two');
+
+    assert.deepStrictEqual(mockExecutor.commands, [
+      'opam --version',
+      'opam exec -- dune-release --version',
+      'opam exec -- dune-release lint -p pkg-one,pkg-two'
+    ]);
+  });
+
+  test('runLint surfaces dune-release lint failures', () => {
+    const mockExecutor = createMockExecutor({
+      execResults: new Map([
+        ['opam --version', '2.1.0'],
+        ['dune-release --version', '2.0.0'],
+      ]),
+      execErrors: new Map([
+        ['dune-release lint', new Error('Lint failed')]
+      ])
+    });
+
+    const manager = new ReleaseManager(createTestContext({ ref: 'refs/heads/main', token: '' }), false, mockExecutor);
+
+    assert.throws(
+      () => manager.runLint('test-package'),
+      /Lint failed/
+    );
+  });
+});
+
+// ============================================================================
 // Package Input Parsing Tests
 // ============================================================================
 
 describe('Package input parsing', () => {
   test('parses single package', () => {
-    const packagesInput = 'my-package';
-    let packagesArray: string[];
-
-    if (packagesInput.startsWith('[') && packagesInput.endsWith(']')) {
-      packagesArray = JSON.parse(packagesInput);
-    } else if (packagesInput.includes('\n')) {
-      packagesArray = packagesInput.split('\n');
-    } else if (packagesInput.includes(',')) {
-      packagesArray = packagesInput.split(',');
-    } else {
-      packagesArray = [packagesInput];
-    }
-    packagesArray = packagesArray.map(pkg => pkg.trim()).filter(pkg => pkg.length > 0);
-
-    assert.deepStrictEqual(packagesArray, ['my-package']);
+    assert.strictEqual(parsePackagesInput('my-package'), 'my-package');
   });
 
   test('parses comma-separated packages', () => {
-    const packagesInput = 'pkg1,pkg2,pkg3';
-    let packagesArray: string[];
-
-    if (packagesInput.startsWith('[') && packagesInput.endsWith(']')) {
-      packagesArray = JSON.parse(packagesInput);
-    } else if (packagesInput.includes('\n')) {
-      packagesArray = packagesInput.split('\n');
-    } else if (packagesInput.includes(',')) {
-      packagesArray = packagesInput.split(',');
-    } else {
-      packagesArray = [packagesInput];
-    }
-    packagesArray = packagesArray.map(pkg => pkg.trim()).filter(pkg => pkg.length > 0);
-
-    assert.deepStrictEqual(packagesArray, ['pkg1', 'pkg2', 'pkg3']);
+    assert.strictEqual(parsePackagesInput('pkg1,pkg2,pkg3'), 'pkg1,pkg2,pkg3');
   });
 
   test('parses JSON array packages', () => {
-    const packagesInput = '["pkg1", "pkg2"]';
-    let packagesArray: string[];
-
-    if (packagesInput.startsWith('[') && packagesInput.endsWith(']')) {
-      packagesArray = JSON.parse(packagesInput);
-    } else if (packagesInput.includes('\n')) {
-      packagesArray = packagesInput.split('\n');
-    } else if (packagesInput.includes(',')) {
-      packagesArray = packagesInput.split(',');
-    } else {
-      packagesArray = [packagesInput];
-    }
-    packagesArray = packagesArray.map(pkg => pkg.trim()).filter(pkg => pkg.length > 0);
-
-    assert.deepStrictEqual(packagesArray, ['pkg1', 'pkg2']);
+    assert.strictEqual(parsePackagesInput('["pkg1", "pkg2"]'), 'pkg1,pkg2');
   });
 
   test('parses newline-separated packages (YAML list)', () => {
-    const packagesInput = 'pkg1\npkg2\npkg3';
-    let packagesArray: string[];
-
-    if (packagesInput.startsWith('[') && packagesInput.endsWith(']')) {
-      packagesArray = JSON.parse(packagesInput);
-    } else if (packagesInput.includes('\n')) {
-      packagesArray = packagesInput.split('\n');
-    } else if (packagesInput.includes(',')) {
-      packagesArray = packagesInput.split(',');
-    } else {
-      packagesArray = [packagesInput];
-    }
-    packagesArray = packagesArray.map(pkg => pkg.trim()).filter(pkg => pkg.length > 0);
-
-    assert.deepStrictEqual(packagesArray, ['pkg1', 'pkg2', 'pkg3']);
+    assert.strictEqual(parsePackagesInput('pkg1\npkg2\npkg3'), 'pkg1,pkg2,pkg3');
   });
 
   test('filters empty packages', () => {
-    const packagesInput = 'pkg1,,pkg2,  ,pkg3';
-    let packagesArray: string[];
+    assert.strictEqual(parsePackagesInput('pkg1,,pkg2,  ,pkg3'), 'pkg1,pkg2,pkg3');
+  });
 
-    if (packagesInput.startsWith('[') && packagesInput.endsWith(']')) {
-      packagesArray = JSON.parse(packagesInput);
-    } else if (packagesInput.includes('\n')) {
-      packagesArray = packagesInput.split('\n');
-    } else if (packagesInput.includes(',')) {
-      packagesArray = packagesInput.split(',');
-    } else {
-      packagesArray = [packagesInput];
-    }
-    packagesArray = packagesArray.map(pkg => pkg.trim()).filter(pkg => pkg.length > 0);
-
-    assert.deepStrictEqual(packagesArray, ['pkg1', 'pkg2', 'pkg3']);
+  test('rejects empty package input', () => {
+    assert.throws(
+      () => parsePackagesInput(' , \n '),
+      /No valid packages/
+    );
   });
 });
 
@@ -569,4 +552,3 @@ describe('Error message detection', () => {
     assert.ok(errorMessage2.includes('Invalid username or token'));
   });
 });
-

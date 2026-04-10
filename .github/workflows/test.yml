@@ -254,3 +254,121 @@ jobs:
           echo "Checking for expected error keyword: ${{ matrix.scenario.expect-error }}"
           # In a real test, we'd capture and check the error output
           echo "✅ Error validation (placeholder)"
+
+  lint-integration-tests:
+    name: Lint integration test - ${{ matrix.scenario.name }}
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario:
+          - name: "valid-lint"
+            description: "Test successful lint-only flow without tag or token"
+            setup: |
+              echo 'opam-version: "2.0"' > test-package.opam
+              echo 'name: "test-package"' >> test-package.opam
+              echo 'depends: ["ocaml" "dune"]' >> test-package.opam
+            inputs:
+              package-name: test-package
+            expect-success: true
+
+          - name: "invalid-opam-lint"
+            description: "Test lint-only action with invalid opam file"
+            setup: |
+              echo 'invalid opam content' > test-package.opam
+            inputs:
+              package-name: test-package
+            expect-success: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build the actions
+        run: |
+          npm ci
+          npm run build
+
+      - name: Create test environment
+        run: |
+          mkdir -p test-env
+          cd test-env
+
+          git init
+          git config user.name "Test User"
+          git config user.email "test@example.com"
+
+          ${{ matrix.scenario.setup }}
+
+          git add -A || true
+          git commit -m "Initial test commit" || echo "No files to commit"
+
+          cd ..
+          cp -r test-env/*.opam . 2>/dev/null || true
+
+          mkdir -p .test-bin
+          cat > .test-bin/dune-release << 'EOF'
+          #!/bin/bash
+          case "$1" in
+            lint)
+              if [[ -f test-package.opam ]] && grep -q "opam-version" test-package.opam; then
+                echo "Lint passed"
+                exit 0
+              else
+                echo "Lint failed: invalid opam file"
+                exit 1
+              fi
+              ;;
+            *)
+              echo "Mock dune-release: $@"
+              exit 0
+              ;;
+          esac
+          EOF
+          chmod +x .test-bin/dune-release
+
+          echo "PATH=$PWD/.test-bin:$PATH" >> $GITHUB_ENV
+
+      - name: Setup OCaml (mock)
+        run: |
+          cat > $PWD/.test-bin/opam << 'EOF'
+          #!/bin/bash
+          if [[ "$1" == "exec" ]] && [[ "$2" == "--" ]]; then
+            shift 2
+            exec "$@"
+          else
+            echo "Mock opam: $@"
+            exit 0
+          fi
+          EOF
+          chmod +x $PWD/.test-bin/opam
+
+      - name: Run lint action
+        id: test-lint-action
+        uses: ./lint
+        with:
+          packages: ${{ matrix.scenario.inputs.package-name }}
+        continue-on-error: true
+
+      - name: Validate lint outcome
+        run: |
+          echo "Action outcome: ${{ steps.test-lint-action.outcome }}"
+          echo "Expected success: ${{ matrix.scenario.expect-success }}"
+
+          if [[ "${{ matrix.scenario.expect-success }}" == "true" ]]; then
+            if [[ "${{ steps.test-lint-action.outcome }}" != "success" ]]; then
+              echo "❌ Expected success but got: ${{ steps.test-lint-action.outcome }}"
+              exit 1
+            fi
+            echo "✅ Lint action succeeded as expected"
+          else
+            if [[ "${{ steps.test-lint-action.outcome }}" == "success" ]]; then
+              echo "❌ Expected failure but action succeeded"
+              exit 1
+            fi
+            echo "✅ Lint action failed as expected"
+          fi

@@ -38,6 +38,25 @@ If you have a separate workflow, you can wait for it to complete before releasin
       - completed
 ```
 
+For pull requests and branch pushes, use the lint-only action instead of the tag-only release action:
+
+```yaml
+jobs:
+  opam-lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: 5.3.0
+      - run: opam install . --deps-only -y
+      - run: opam install dune-release -y
+      - uses: davesnx/dune-release-action/lint@v0.3
+        with:
+          packages: your-package
+```
+
 **Important:** Add the `if: startsWith(github.ref, 'refs/tags/')` condition to your job to ensure it only runs on tag pushes:
 
 ```yaml

@@ -34,7 +34,39 @@ Install with:
 
 ## Usage
 
-### Simple example
+### Lint only in CI
+
+Use the `/lint` sub-action for pull requests and branch pushes:
+
+```yaml
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  opam-lint:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: 5.3.0
+
+      - run: opam install . --deps-only -y
+      - run: opam install dune-release -y
+
+      - uses: davesnx/dune-release-action/lint@v0.3
+        with:
+          packages: 'your-package'
+```
+
+### Release on tags
 
 ```yaml
 name: Release
@@ -66,19 +98,18 @@ jobs:
       - run: opam install dune-release -y
 
       # Add the dune-release-action
-      - uses: davesnx/dune-release-action@v0.2
+      - uses: davesnx/dune-release-action@v0.3
         with:
           packages: 'your-package'
           github-token: ${{ secrets.GH_TOKEN }}
 ```
 
-### Advanced example (all options)
+### Advanced release example (all options)
 
 ```yaml
-- uses: davesnx/dune-release-action@v0.2
+- uses: davesnx/dune-release-action@v0.3
   with:
-    packages: 'your-package'              # (required) The package name(s) to publish to the opam-repository
-    packages: |                           # you can pass multiple packages
+    packages: |                           # (required) You can pass multiple packages
       package-one
       package-two
       package-three
@@ -92,12 +123,14 @@ jobs:
 
 ## Inputs
 
+The following inputs apply to the root release action: `davesnx/dune-release-action@v0.3`.
+
 ### Required
 
 | Input | Description | Example |
 |-------|-------------|---------|
 | `packages` | Package name(s) to release. Single package as string or multiple as array | `html_of_jsx` or `["pkg1", "pkg2"]` |
-| `github-token` | GitHub token for API access | `${{ secrets.GH_TOKEN }}` |
+| `github-token` | GitHub token for release publication and opam submission | `${{ secrets.GH_TOKEN }}` |
 
 Your `github-token` secret must have these scopes:
 - ✅ `repo` - Full control of private repositories
@@ -119,6 +152,16 @@ Your `github-token` secret must have these scopes:
 | `to-opam-repository` | If true, submits a PR to opam-repository | `true` |
 | `to-github-releases` | If true, creates a GitHub release | `true` |
 | `include-submodules` | If true, includes git submodules in the distribution tarball | `false` |
+
+## Lint Action Inputs
+
+The lint-only action `davesnx/dune-release-action/lint@v0.3` accepts:
+
+| Input | Description | Example |
+|-------|-------------|---------|
+| `packages` | Package name(s) to lint. Single package, YAML list, JSON array, or comma-separated string | `html_of_jsx` or `pkg1,pkg2` |
+
+The lint action does not require a GitHub token and does not require a tag ref.
 
 ### Changelog Format
 
@@ -149,10 +192,18 @@ Your `CHANGES.md` should follow this format:
 
 ## Outputs
 
+Release action outputs for `davesnx/dune-release-action@v0.3`:
+
 | Output | Description |
 |--------|-------------|
 | `version` | Extracted version from git tag |
 | `release-status` | Status of the release (`success` or `failed`) |
+
+Lint action outputs for `davesnx/dune-release-action/lint@v0.3`:
+
+| Output | Description |
+|--------|-------------|
+| `lint-status` | Status of the lint run (`success` or `failed`) |
 
 ## License
 

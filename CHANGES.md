@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add `dune-release-action/lint` as a package-only lint action for branch and pull request workflows [@davesnx](https://github.com/davesnx)
+- Reuse the shared release runtime for both release and lint entrypoints, with dedicated tests and docs for the new `/lint` action [@davesnx](https://github.com/davesnx)
+
 ## v0.2.14
 
 - Fix "Resource not accessible by integration" error by falling back to repository owner when GITHUB_TOKEN lacks user scope [@davesnx](https://github.com/davesnx)

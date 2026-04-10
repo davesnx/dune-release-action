@@ -8,7 +8,9 @@
     "test": "npx tsx --test lib/changelog.test.ts src/main.test.ts",
     "test:changelog": "npx tsx --test lib/changelog.test.ts",
     "test:main": "npx tsx --test src/main.test.ts",
-    "build": "ncc build src/main.ts -o dist --source-map --license licenses.txt",
+    "build": "npm run build:release && npm run build:lint",
+    "build:release": "ncc build src/main.ts -o dist --source-map --license licenses.txt",
+    "build:lint": "ncc build src/lint.ts -o lint/dist --source-map --license licenses.txt",
     "build:watch": "ncc build src/main.ts -o dist --source-map --license licenses.txt --watch"
   },
   "dependencies": {
