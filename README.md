@@ -1,12 +1,17 @@
 # dune-release-action
 
-Automatically release OCaml packages to opam using `dune-release` in GitHub Actions workflows 🚀
+Release OCaml packages to opam with `dune-release`, or run opam linting only via `dune-release-action/lint`.
+
+There are two public actions:
+
+- `davesnx/dune-release-action@v0.3` for tag-driven releases
+- `davesnx/dune-release-action/lint@v0.3` for branch and pull request linting
 
 **New to automatic releasing?** Check out the [GUIDE.md](./GUIDE.md) for best practices on when to release, how to maintain your changelog, and a handy release script.
 
 ## Requirements
 
-### GitHub Setup
+### GitHub Setup For Releases
 
 1. **Fork opam-repository**: You need a fork of [ocaml/opam-repository](https://github.com/ocaml/opam-repository) in your GitHub account
    - Go to https://github.com/ocaml/opam-repository/fork
@@ -19,9 +24,11 @@ Automatically release OCaml packages to opam using `dune-release` in GitHub Acti
 
 ### Build Tools
 
-The action expects these tools to be available in your GitHub Actions environment:
+Both actions expect these tools to be available in your GitHub Actions environment:
 - `opam` - OCaml package manager
 - `dune-release` - Release automation tool
+
+The actions validate that these tools are available, but they do not install them for you. That stays in your workflow so you keep control over the OCaml switch, caching, and setup policy.
 
 Install with:
 ```yaml

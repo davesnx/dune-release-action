@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.3.0
 
 - Add `dune-release-action/lint` as a package-only lint action for branch and pull request workflows [@davesnx](https://github.com/davesnx)
 - Reuse the shared release runtime for both release and lint entrypoints, with dedicated tests and docs for the new `/lint` action [@davesnx](https://github.com/davesnx)
