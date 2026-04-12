@@ -2,9 +2,11 @@
 
 ## v0.3.0
 
+- Upgrade action runtime from Node.js 20 to Node.js 24 [@davesnx](https://github.com/davesnx)
+- Update `@types/node` to v24 [@davesnx](https://github.com/davesnx)
+- Bump CI workflows to `actions/checkout@v6` and Node.js 24 [@davesnx](https://github.com/davesnx)
 - Add `dune-release-action/lint` as a package-only lint action for branch and pull request workflows [@davesnx](https://github.com/davesnx)
 - Reuse the shared release runtime for both release and lint entrypoints, with dedicated tests and docs for the new `/lint` action [@davesnx](https://github.com/davesnx)
-
 ## v0.2.14
 
 - Fix "Resource not accessible by integration" error by falling back to repository owner when GITHUB_TOKEN lacks user scope [@davesnx](https://github.com/davesnx)
