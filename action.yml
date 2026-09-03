@@ -42,6 +42,9 @@ inputs:
   publish-message:
     description: 'Custom message for the GitHub release publication'
     required: false
+  preamble:
+    description: 'Text prepended to the opam-repository pull request description, before the changelog content'
+    required: false
   dry-run:
     description: 'Validate setup without publishing. Runs lint, changelog validation, and distrib but skips GitHub release and opam submission'
     required: false

@@ -68,6 +68,15 @@ export const defaultExecutor: Executor = {
   }
 };
 
+export function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+export function composeOpamPrMessage(preamble: string, changelog: string | null): string {
+  const changes = changelog?.trim();
+  return changes ? `${preamble.trim()}\n\n${changes}` : preamble.trim();
+}
+
 export function parsePackagesInput(packagesInput: string): string {
   const normalizedInput = packagesInput.trim();
   let packagesArray: string[];
@@ -362,6 +371,7 @@ export class ReleaseManager {
     opamRepository: OpamRepository = { owner: 'ocaml', repo: 'opam-repository' },
     buildDir?: string,
     publishMessage?: string,
+    preamble?: string,
     dryRun: boolean = false
   ): Promise<void> {
     let versionChangelogPath: string | null = null;
@@ -469,7 +479,7 @@ export class ReleaseManager {
             publishArgs.push(`--build-dir=${buildDir}`);
           }
           if (publishMessage) {
-            publishArgs.push(`--msg=${publishMessage}`);
+            publishArgs.push(`--message=${shellQuote(publishMessage)}`);
           }
           this.info(`Running: dune-release publish ${publishArgs.join(' ')}`);
           this.runDuneRelease('publish', publishArgs);
@@ -520,6 +530,17 @@ export class ReleaseManager {
           }
           if (buildDir) {
             opamSubmitArgs.push(`--build-dir=${buildDir}`);
+          }
+          if (preamble) {
+            let changelogContent: string | null = null;
+            if (changelogPath) {
+              try {
+                changelogContent = this.executor.readFile(changelogPath);
+              } catch (error: any) {
+                core.warning(`Could not read changelog for opam PR message, using preamble only: ${error.message}`);
+              }
+            }
+            opamSubmitArgs.push(`--message=${shellQuote(composeOpamPrMessage(preamble, changelogContent))}`);
           }
           opamSubmitArgs.push(`--opam-repo=${opamRepository.owner}/${opamRepository.repo}`);
           opamSubmitArgs.push(`--remote-repo=git@github.com:${effectiveUser}/opam-repository`);
