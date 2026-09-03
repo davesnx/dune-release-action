@@ -4,8 +4,8 @@ Release OCaml packages to opam with `dune-release`, or run opam linting only via
 
 There are two public actions:
 
-- `davesnx/dune-release-action@v0.4.0` for tag-driven releases
-- `davesnx/dune-release-action/lint@v0.4.0` for branch and pull request linting
+- `davesnx/dune-release-action@v0.5.0` for tag-driven releases
+- `davesnx/dune-release-action/lint@v0.5.0` for branch and pull request linting
 
 **New to automatic releasing?** Check out the [GUIDE.md](./GUIDE.md) for best practices on when to release, how to maintain your changelog, and a handy release script.
 
@@ -68,7 +68,7 @@ jobs:
       - run: opam install . --deps-only -y
       - run: opam install dune-release -y
 
-      - uses: davesnx/dune-release-action/lint@v0.4.0
+      - uses: davesnx/dune-release-action/lint@v0.5.0
         with:
           packages: 'your-package'
 ```
@@ -105,7 +105,7 @@ jobs:
       - run: opam install dune-release -y
 
       # Add the dune-release-action
-      - uses: davesnx/dune-release-action@v0.4.0
+      - uses: davesnx/dune-release-action@v0.5.0
         with:
           packages: 'your-package'
           github-token: ${{ secrets.GH_TOKEN }}
@@ -114,7 +114,7 @@ jobs:
 ### Advanced release example (all options)
 
 ```yaml
-- uses: davesnx/dune-release-action@v0.4.0
+- uses: davesnx/dune-release-action@v0.5.0
   with:
     packages: |                           # (required) You can pass multiple packages
       package-one
@@ -132,7 +132,7 @@ jobs:
 
 ## Inputs
 
-The following inputs apply to the root release action: `davesnx/dune-release-action@v0.4.0`.
+The following inputs apply to the root release action: `davesnx/dune-release-action@v0.5.0`.
 
 ### Required
 
@@ -171,7 +171,7 @@ Your `github-token` secret must have these scopes:
 Set `draft: true` to inspect the release tarball before anyone can install it:
 
 ```yaml
-- uses: davesnx/dune-release-action@v0.4.0
+- uses: davesnx/dune-release-action@v0.5.0
   with:
     packages: 'your-package'
     github-token: ${{ secrets.GH_TOKEN }}
@@ -184,7 +184,7 @@ Draft mode never opens the opam-repository PR, even if `to-opam-repository` is `
 
 ## Lint Action Inputs
 
-The lint-only action `davesnx/dune-release-action/lint@v0.4.0` accepts:
+The lint-only action `davesnx/dune-release-action/lint@v0.5.0` accepts:
 
 | Input | Description | Example |
 |-------|-------------|---------|
@@ -221,7 +221,7 @@ Your `CHANGES.md` should follow this format:
 
 ## Outputs
 
-Release action outputs for `davesnx/dune-release-action@v0.4.0`:
+Release action outputs for `davesnx/dune-release-action@v0.5.0`:
 
 | Output | Description |
 |--------|-------------|
@@ -230,7 +230,7 @@ Release action outputs for `davesnx/dune-release-action@v0.4.0`:
 | `github-release-url` | URL of the created GitHub release. With `draft: true` this is the repository releases page, where drafts are listed |
 | `opam-pr-url` | URL of the opam-repository pull request |
 
-Lint action outputs for `davesnx/dune-release-action/lint@v0.4.0`:
+Lint action outputs for `davesnx/dune-release-action/lint@v0.5.0`:
 
 | Output | Description |
 |--------|-------------|
