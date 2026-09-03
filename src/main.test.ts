@@ -1,6 +1,6 @@
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert';
-import { ReleaseManager, GitHubContext, ReleaseConfig, Executor, parsePackagesInput } from './core';
+import { ReleaseManager, GitHubContext, ReleaseConfig, Executor, parsePackagesInput, shellQuote, composeOpamPrMessage } from './core';
 import Fs from 'fs';
 import Path from 'path';
 import { DEFAULT_CHANGELOG_PATH } from './main';
@@ -418,6 +418,37 @@ describe('Dry-run mode', () => {
     const dryRunInput: string = '';
     const dryRun = dryRunInput === 'true';
     assert.strictEqual(dryRun, false);
+  });
+});
+
+// ============================================================================
+// Opam PR Message Tests
+// ============================================================================
+
+describe('Opam PR message', () => {
+  test('composes preamble with changelog content', () => {
+    const message = composeOpamPrMessage('This release drops OCaml 4.x support.', '- Fixed a bug\n- Added a feature\n');
+    assert.strictEqual(message, 'This release drops OCaml 4.x support.\n\n- Fixed a bug\n- Added a feature');
+  });
+
+  test('uses preamble alone when changelog is missing', () => {
+    assert.strictEqual(composeOpamPrMessage('Just the preamble', null), 'Just the preamble');
+  });
+
+  test('uses preamble alone when changelog is empty', () => {
+    assert.strictEqual(composeOpamPrMessage('Just the preamble', '  \n'), 'Just the preamble');
+  });
+
+  test('shellQuote wraps value in single quotes', () => {
+    assert.strictEqual(shellQuote('hello world'), "'hello world'");
+  });
+
+  test('shellQuote escapes embedded single quotes', () => {
+    assert.strictEqual(shellQuote("it's here"), "'it'\\''s here'");
+  });
+
+  test('shellQuote preserves newlines and double quotes', () => {
+    assert.strictEqual(shellQuote('line "one"\nline two'), "'line \"one\"\nline two'");
   });
 });
 

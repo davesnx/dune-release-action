@@ -17,6 +17,7 @@ type Input = {
   opamRepository: OpamRepository;
   buildDir: string | undefined;
   publishMessage: string | undefined;
+  preamble: string | undefined;
   dryRun: boolean;
 }
 
@@ -39,6 +40,7 @@ const parseInput = (): Input => {
   const opamRepositoryInput = core.getInput('opam-repository') || 'ocaml/opam-repository';
   const buildDir = core.getInput('build-dir') || undefined;
   const publishMessage = core.getInput('publish-message') || undefined;
+  const preamble = core.getInput('pr-preamble-message') || undefined;
   const dryRun = core.getInput('dry-run') === 'true';
 
   const [opamOwner, opamRepo] = opamRepositoryInput.split('/');
@@ -47,12 +49,12 @@ const parseInput = (): Input => {
   }
   const opamRepository: OpamRepository = { owner: opamOwner, repo: opamRepo };
 
-  return { packages, verbose, changelogPath, token, toOpamRepository, toGithubReleases, includeSubmodules, opamRepository, buildDir, publishMessage, dryRun };
+  return { packages, verbose, changelogPath, token, toOpamRepository, toGithubReleases, includeSubmodules, opamRepository, buildDir, publishMessage, preamble, dryRun };
 }
 
 async function main() {
   try {
-    const { packages, verbose, changelogPath, token, toOpamRepository, toGithubReleases, includeSubmodules, opamRepository, buildDir, publishMessage, dryRun } = parseInput();
+    const { packages, verbose, changelogPath, token, toOpamRepository, toGithubReleases, includeSubmodules, opamRepository, buildDir, publishMessage, preamble, dryRun } = parseInput();
 
     const testRefOverride = process.env.TEST_OVERRIDE_GITHUB_REF || '';
     const ref = testRefOverride || process.env.GITHUB_REF || github.context.ref;
@@ -108,10 +110,11 @@ async function main() {
       core.info(`Dry run: ${dryRun}`);
       if (buildDir) core.info(`Build directory: ${buildDir}`);
       if (publishMessage) core.info(`Publish message: ${publishMessage}`);
+      if (preamble) core.info(`Opam PR preamble: ${preamble}`);
       core.info('================================');
     }
     const releaseManager = new ReleaseManager(context, verbose);
-    await releaseManager.runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository, includeSubmodules, opamRepository, buildDir, publishMessage, dryRun);
+    await releaseManager.runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository, includeSubmodules, opamRepository, buildDir, publishMessage, preamble, dryRun);
 
     core.setOutput('release-status', 'success');
   } catch (error: any) {

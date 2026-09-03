@@ -126,6 +126,7 @@ jobs:
     to-opam-repository: true              # Submit PR to opam-repository
     to-github-releases: true              # Create GitHub release
     include-submodules: true              # Include git submodules in the tarball
+    pr-preamble-message: 'cc @my-org/release-team' # Text prepended to the opam PR description
 ```
 
 ## Inputs
@@ -159,6 +160,8 @@ Your `github-token` secret must have these scopes:
 | `to-opam-repository` | If true, submits a PR to opam-repository | `true` |
 | `to-github-releases` | If true, creates a GitHub release | `true` |
 | `include-submodules` | If true, includes git submodules in the distribution tarball | `false` |
+| `pr-preamble-message` | Text prepended to the opam-repository PR description, before the changelog content | (none) |
+| `publish-message` | Custom message for the GitHub release publication | (changelog content) |
 
 ## Lint Action Inputs
 

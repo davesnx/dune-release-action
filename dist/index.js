@@ -30446,6 +30446,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.ReleaseManager = exports.defaultExecutor = void 0;
+exports.shellQuote = shellQuote;
+exports.composeOpamPrMessage = composeOpamPrMessage;
 exports.parsePackagesInput = parsePackagesInput;
 const core = __importStar(__nccwpck_require__(7484));
 const child_process_1 = __nccwpck_require__(5317);
@@ -30486,6 +30488,13 @@ exports.defaultExecutor = {
         return process.cwd();
     }
 };
+function shellQuote(value) {
+    return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+function composeOpamPrMessage(preamble, changelog) {
+    const changes = changelog?.trim();
+    return changes ? `${preamble.trim()}\n\n${changes}` : preamble.trim();
+}
 function parsePackagesInput(packagesInput) {
     const normalizedInput = packagesInput.trim();
     let packagesArray;
@@ -30734,7 +30743,7 @@ class ReleaseManager {
     /**
      * Run the full release pipeline
      */
-    async runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository, includeSubmodules = false, opamRepository = { owner: 'ocaml', repo: 'opam-repository' }, buildDir, publishMessage, dryRun = false) {
+    async runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository, includeSubmodules = false, opamRepository = { owner: 'ocaml', repo: 'opam-repository' }, buildDir, publishMessage, preamble, dryRun = false) {
         let versionChangelogPath = null;
         try {
             this.checkDependencies();
@@ -30827,7 +30836,7 @@ class ReleaseManager {
                         publishArgs.push(`--build-dir=${buildDir}`);
                     }
                     if (publishMessage) {
-                        publishArgs.push(`--msg=${publishMessage}`);
+                        publishArgs.push(`--message=${shellQuote(publishMessage)}`);
                     }
                     this.info(`Running: dune-release publish ${publishArgs.join(' ')}`);
                     this.runDuneRelease('publish', publishArgs);
@@ -30878,6 +30887,18 @@ class ReleaseManager {
                     }
                     if (buildDir) {
                         opamSubmitArgs.push(`--build-dir=${buildDir}`);
+                    }
+                    if (preamble) {
+                        let changelogContent = null;
+                        if (changelogPath) {
+                            try {
+                                changelogContent = this.executor.readFile(changelogPath);
+                            }
+                            catch (error) {
+                                core.warning(`Could not read changelog for opam PR message, using preamble only: ${error.message}`);
+                            }
+                        }
+                        opamSubmitArgs.push(`--message=${shellQuote(composeOpamPrMessage(preamble, changelogContent))}`);
                     }
                     opamSubmitArgs.push(`--opam-repo=${opamRepository.owner}/${opamRepository.repo}`);
                     opamSubmitArgs.push(`--remote-repo=git@github.com:${effectiveUser}/opam-repository`);
@@ -31072,17 +31093,18 @@ const parseInput = () => {
     const opamRepositoryInput = core.getInput('opam-repository') || 'ocaml/opam-repository';
     const buildDir = core.getInput('build-dir') || undefined;
     const publishMessage = core.getInput('publish-message') || undefined;
+    const preamble = core.getInput('pr-preamble-message') || undefined;
     const dryRun = core.getInput('dry-run') === 'true';
     const [opamOwner, opamRepo] = opamRepositoryInput.split('/');
     if (!opamOwner || !opamRepo) {
         throw new Error(`Invalid opam-repository format: ${opamRepositoryInput}. Expected: owner/repo`);
     }
     const opamRepository = { owner: opamOwner, repo: opamRepo };
-    return { packages, verbose, changelogPath, token, toOpamRepository, toGithubReleases, includeSubmodules, opamRepository, buildDir, publishMessage, dryRun };
+    return { packages, verbose, changelogPath, token, toOpamRepository, toGithubReleases, includeSubmodules, opamRepository, buildDir, publishMessage, preamble, dryRun };
 };
 async function main() {
     try {
-        const { packages, verbose, changelogPath, token, toOpamRepository, toGithubReleases, includeSubmodules, opamRepository, buildDir, publishMessage, dryRun } = parseInput();
+        const { packages, verbose, changelogPath, token, toOpamRepository, toGithubReleases, includeSubmodules, opamRepository, buildDir, publishMessage, preamble, dryRun } = parseInput();
         const testRefOverride = process.env.TEST_OVERRIDE_GITHUB_REF || '';
         const ref = testRefOverride || process.env.GITHUB_REF || github.context.ref;
         if (!ref.startsWith('refs/tags/')) {
@@ -31136,10 +31158,12 @@ async function main() {
                 core.info(`Build directory: ${buildDir}`);
             if (publishMessage)
                 core.info(`Publish message: ${publishMessage}`);
+            if (preamble)
+                core.info(`Opam PR preamble: ${preamble}`);
             core.info('================================');
         }
         const releaseManager = new core_1.ReleaseManager(context, verbose);
-        await releaseManager.runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository, includeSubmodules, opamRepository, buildDir, publishMessage, dryRun);
+        await releaseManager.runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository, includeSubmodules, opamRepository, buildDir, publishMessage, preamble, dryRun);
         core.setOutput('release-status', 'success');
     }
     catch (error) {

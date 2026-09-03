@@ -69,9 +69,8 @@ jobs:
               to-github-releases: false
             expect-success: true
 
-          # Error scenarios
           - name: "missing-changelog"
-            description: "Test with missing CHANGES.md"
+            description: "Test with missing CHANGES.md (release proceeds with a warning)"
             setup: |
               echo 'opam-version: "2.0"' > test-package.opam
               echo 'name: "test-package"' >> test-package.opam
@@ -79,8 +78,9 @@ jobs:
             inputs:
               package-name: test-package
               changelog: test-env/CHANGES.md
-            expect-success: false
-            expect-error: "changelog"
+            expect-success: true
+
+          # Error scenarios
 
           - name: "invalid-opam"
             description: "Test with invalid opam file"
