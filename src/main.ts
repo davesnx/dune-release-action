@@ -40,7 +40,7 @@ const parseInput = (): Input => {
   const opamRepositoryInput = core.getInput('opam-repository') || 'ocaml/opam-repository';
   const buildDir = core.getInput('build-dir') || undefined;
   const publishMessage = core.getInput('publish-message') || undefined;
-  const preamble = core.getInput('preamble') || undefined;
+  const preamble = core.getInput('pr-preamble-message') || undefined;
   const dryRun = core.getInput('dry-run') === 'true';
 
   const [opamOwner, opamRepo] = opamRepositoryInput.split('/');

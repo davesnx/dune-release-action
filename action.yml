@@ -42,7 +42,7 @@ inputs:
   publish-message:
     description: 'Custom message for the GitHub release publication'
     required: false
-  preamble:
+  pr-preamble-message:
     description: 'Text prepended to the opam-repository pull request description, before the changelog content'
     required: false
   dry-run:
