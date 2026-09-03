@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.4.0
 
 - Add `pr-preamble-message` input to prepend custom text to the opam-repository PR description [@davesnx](https://github.com/davesnx)
 - Fix `publish-message` input: it was passed to `dune-release publish` as the unrecognized `--msg` flag, now uses `--message` with proper shell quoting [@davesnx](https://github.com/davesnx)
