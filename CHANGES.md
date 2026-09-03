@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add `draft` input to create the GitHub release as a draft, skipping the opam-repository PR, so the tarball can be inspected before publishing [#4](https://github.com/davesnx/dune-release-action/issues/4) [@davesnx](https://github.com/davesnx)
+
 ## v0.4.0
 
 - Add `pr-preamble-message` input to prepend custom text to the opam-repository PR description [@davesnx](https://github.com/davesnx)

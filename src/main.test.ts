@@ -453,6 +453,45 @@ describe('Opam PR message', () => {
 });
 
 // ============================================================================
+// Draft Mode Tests
+// ============================================================================
+
+describe('Draft mode', () => {
+  async function runReleaseWith(draft: boolean): Promise<string[]> {
+    const mockExecutor = createMockExecutor({
+      execResults: new Map([
+        ['opam --version', '2.1.0'],
+        ['dune-release --version', '2.0.0'],
+      ])
+    });
+    const manager = new ReleaseManager(createTestContext(), false, mockExecutor);
+    await manager.runRelease('pkg', null, createTestConfig(), true, true, false, { owner: 'ocaml', repo: 'opam-repository' }, undefined, undefined, undefined, false, draft);
+    return mockExecutor.commands;
+  }
+
+  const findCommand = (commands: string[], subcommand: string): string => {
+    const prefix = `opam exec -- dune-release ${subcommand} `;
+    const command = commands.find(c => c.startsWith(prefix));
+    assert.ok(command, `no ${prefix} command was run`);
+    return command;
+  };
+
+  test('passes --draft to publish and skips the opam PR when enabled', async () => {
+    const commands = await runReleaseWith(true);
+
+    assert.ok(findCommand(commands, 'publish').includes(' --draft'));
+    assert.ok(!commands.some(c => c.startsWith('opam exec -- dune-release opam submit ')), `opam submit was run: ${commands}`);
+  });
+
+  test('does not pass --draft by default', async () => {
+    const commands = await runReleaseWith(false);
+
+    assert.ok(!findCommand(commands, 'publish').includes('--draft'));
+    assert.ok(!findCommand(commands, 'opam submit').includes('--draft'));
+  });
+});
+
+// ============================================================================
 // Lint Mode Tests
 // ============================================================================
 
@@ -575,6 +614,12 @@ describe('Action metadata', () => {
     const actionYml = Fs.readFileSync(actionYmlPath, 'utf-8');
 
     assert.ok(actionYml.includes("default: './CHANGES.md'"));
+  });
+
+  test('declares the draft input defaulting to false', () => {
+    const actionYml = Fs.readFileSync(Path.join(process.cwd(), 'action.yml'), 'utf-8');
+
+    assert.match(actionYml, /\n  draft:\n(?: {4}.*\n)*? {4}default: 'false'\n/);
   });
 });
 
