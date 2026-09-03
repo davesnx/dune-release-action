@@ -49,6 +49,10 @@ inputs:
     description: 'Validate setup without publishing. Runs lint, changelog validation, and distrib but skips GitHub release and opam submission'
     required: false
     default: 'false'
+  draft:
+    description: 'If true, creates the GitHub release as a draft so the tarball can be inspected before publishing. Draft mode skips the opam-repository PR; submit to opam after publishing the release'
+    required: false
+    default: 'false'
 
 outputs:
   version:
@@ -56,7 +60,7 @@ outputs:
   release-status:
     description: 'Status of the release (success/failed)'
   github-release-url:
-    description: 'URL of the created GitHub release'
+    description: 'URL of the created GitHub release. For a draft release this is the repository releases page, where drafts are listed'
   opam-pr-url:
     description: 'URL to create the opam PR'
 

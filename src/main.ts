@@ -19,6 +19,7 @@ type Input = {
   publishMessage: string | undefined;
   preamble: string | undefined;
   dryRun: boolean;
+  draft: boolean;
 }
 
 const parseInput = (): Input => {
@@ -42,6 +43,7 @@ const parseInput = (): Input => {
   const publishMessage = core.getInput('publish-message') || undefined;
   const preamble = core.getInput('pr-preamble-message') || undefined;
   const dryRun = core.getInput('dry-run') === 'true';
+  const draft = core.getInput('draft') === 'true';
 
   const [opamOwner, opamRepo] = opamRepositoryInput.split('/');
   if (!opamOwner || !opamRepo) {
@@ -49,12 +51,12 @@ const parseInput = (): Input => {
   }
   const opamRepository: OpamRepository = { owner: opamOwner, repo: opamRepo };
 
-  return { packages, verbose, changelogPath, token, toOpamRepository, toGithubReleases, includeSubmodules, opamRepository, buildDir, publishMessage, preamble, dryRun };
+  return { packages, verbose, changelogPath, token, toOpamRepository, toGithubReleases, includeSubmodules, opamRepository, buildDir, publishMessage, preamble, dryRun, draft };
 }
 
 async function main() {
   try {
-    const { packages, verbose, changelogPath, token, toOpamRepository, toGithubReleases, includeSubmodules, opamRepository, buildDir, publishMessage, preamble, dryRun } = parseInput();
+    const { packages, verbose, changelogPath, token, toOpamRepository, toGithubReleases, includeSubmodules, opamRepository, buildDir, publishMessage, preamble, dryRun, draft } = parseInput();
 
     const testRefOverride = process.env.TEST_OVERRIDE_GITHUB_REF || '';
     const ref = testRefOverride || process.env.GITHUB_REF || github.context.ref;
@@ -108,13 +110,14 @@ async function main() {
       core.info(`Submit to opam: ${toOpamRepository}`);
       core.info(`Include submodules: ${includeSubmodules}`);
       core.info(`Dry run: ${dryRun}`);
+      core.info(`Draft: ${draft}`);
       if (buildDir) core.info(`Build directory: ${buildDir}`);
       if (publishMessage) core.info(`Publish message: ${publishMessage}`);
       if (preamble) core.info(`Opam PR preamble: ${preamble}`);
       core.info('================================');
     }
     const releaseManager = new ReleaseManager(context, verbose);
-    await releaseManager.runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository, includeSubmodules, opamRepository, buildDir, publishMessage, preamble, dryRun);
+    await releaseManager.runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository, includeSubmodules, opamRepository, buildDir, publishMessage, preamble, dryRun, draft);
 
     core.setOutput('release-status', 'success');
   } catch (error: any) {

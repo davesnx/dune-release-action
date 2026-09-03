@@ -127,6 +127,7 @@ jobs:
     to-github-releases: true              # Create GitHub release
     include-submodules: true              # Include git submodules in the tarball
     pr-preamble-message: 'cc @my-org/release-team' # Text prepended to the opam PR description
+    draft: false                          # Create the GitHub release as a draft (skips the opam PR)
 ```
 
 ## Inputs
@@ -162,6 +163,24 @@ Your `github-token` secret must have these scopes:
 | `include-submodules` | If true, includes git submodules in the distribution tarball | `false` |
 | `pr-preamble-message` | Text prepended to the opam-repository PR description, before the changelog content | (none) |
 | `publish-message` | Custom message for the GitHub release publication | (changelog content) |
+| `draft` | If true, creates the GitHub release as a draft and skips the opam-repository PR. See [Draft releases](#draft-releases) | `false` |
+| `dry-run` | Validate setup without publishing: runs lint, changelog validation, and distrib, but skips the GitHub release and opam submission | `false` |
+
+### Draft releases
+
+Set `draft: true` to inspect the release tarball before anyone can install it:
+
+```yaml
+- uses: davesnx/dune-release-action@v0.4.0
+  with:
+    packages: 'your-package'
+    github-token: ${{ secrets.GH_TOKEN }}
+    draft: true
+```
+
+The action runs `dune-release publish --draft`, so the GitHub release is created as a draft with the tarball attached. Drafts are only visible to maintainers, on the repository's releases page. Review the tarball there and press **Publish release** when you are happy with it.
+
+Draft mode never opens the opam-repository PR, even if `to-opam-repository` is `true` (the action warns about it). A draft's tarball URL is temporary and changes when the release is published, so an opam PR opened at that point would break. Submit to opam once the release is published, for example with `dune-release opam pkg && dune-release opam submit` locally.
 
 ## Lint Action Inputs
 
@@ -208,6 +227,8 @@ Release action outputs for `davesnx/dune-release-action@v0.4.0`:
 |--------|-------------|
 | `version` | Extracted version from git tag |
 | `release-status` | Status of the release (`success` or `failed`) |
+| `github-release-url` | URL of the created GitHub release. With `draft: true` this is the repository releases page, where drafts are listed |
+| `opam-pr-url` | URL of the opam-repository pull request |
 
 Lint action outputs for `davesnx/dune-release-action/lint@v0.4.0`:
 

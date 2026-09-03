@@ -372,7 +372,8 @@ export class ReleaseManager {
     buildDir?: string,
     publishMessage?: string,
     preamble?: string,
-    dryRun: boolean = false
+    dryRun: boolean = false,
+    draft: boolean = false
   ): Promise<void> {
     let versionChangelogPath: string | null = null;
 
@@ -382,6 +383,11 @@ export class ReleaseManager {
       this.configureGit();
       const version = this.extractVersion();
 
+      if (draft && toOpamRepository) {
+        core.warning('Draft mode: the opam-repository PR will not be opened. Publish the draft GitHub release first, then submit to opam.');
+        toOpamRepository = false;
+      }
+
       if (dryRun) {
         core.notice('DRY RUN MODE - No releases will be published, no PRs submitted');
       } else if (!toGithubReleases && !toOpamRepository) {
@@ -390,7 +396,7 @@ export class ReleaseManager {
         if (!toGithubReleases) {
           core.warning('GitHub releases disabled - will not publish to GitHub');
         }
-        if (!toOpamRepository) {
+        if (!toOpamRepository && !draft) {
           core.warning('opam submission disabled - will not submit to opam-repository');
         }
       }
@@ -458,7 +464,9 @@ export class ReleaseManager {
       core.endGroup();
 
       const tagName = this.context.ref.replace('refs/tags/', '');
-      const githubReleaseUrl = `https://github.com/${this.context.repository}/releases/tag/${tagName}`;
+      const githubReleaseUrl = draft
+        ? `https://github.com/${this.context.repository}/releases`
+        : `https://github.com/${this.context.repository}/releases/tag/${tagName}`;
 
       if (dryRun) {
         core.startGroup('Publishing to GitHub (dry-run)');
@@ -480,6 +488,9 @@ export class ReleaseManager {
           }
           if (publishMessage) {
             publishArgs.push(`--message=${shellQuote(publishMessage)}`);
+          }
+          if (draft) {
+            publishArgs.push('--draft');
           }
           this.info(`Running: dune-release publish ${publishArgs.join(' ')}`);
           this.runDuneRelease('publish', publishArgs);
@@ -568,7 +579,7 @@ export class ReleaseManager {
         core.notice(`Release ${tagName} completed successfully!`);
 
         if (toGithubReleases) {
-          core.notice(`GitHub release: ${githubReleaseUrl}`);
+          core.notice(draft ? `Draft GitHub release created, review and publish it from: ${githubReleaseUrl}` : `GitHub release: ${githubReleaseUrl}`);
         }
 
         if (toOpamRepository) {

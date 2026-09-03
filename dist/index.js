@@ -30743,13 +30743,17 @@ class ReleaseManager {
     /**
      * Run the full release pipeline
      */
-    async runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository, includeSubmodules = false, opamRepository = { owner: 'ocaml', repo: 'opam-repository' }, buildDir, publishMessage, preamble, dryRun = false) {
+    async runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository, includeSubmodules = false, opamRepository = { owner: 'ocaml', repo: 'opam-repository' }, buildDir, publishMessage, preamble, dryRun = false, draft = false) {
         let versionChangelogPath = null;
         try {
             this.checkDependencies();
             this.validateNewTag();
             this.configureGit();
             const version = this.extractVersion();
+            if (draft && toOpamRepository) {
+                core.warning('Draft mode: the opam-repository PR will not be opened. Publish the draft GitHub release first, then submit to opam.');
+                toOpamRepository = false;
+            }
             if (dryRun) {
                 core.notice('DRY RUN MODE - No releases will be published, no PRs submitted');
             }
@@ -30760,7 +30764,7 @@ class ReleaseManager {
                 if (!toGithubReleases) {
                     core.warning('GitHub releases disabled - will not publish to GitHub');
                 }
-                if (!toOpamRepository) {
+                if (!toOpamRepository && !draft) {
                     core.warning('opam submission disabled - will not submit to opam-repository');
                 }
             }
@@ -30815,7 +30819,9 @@ class ReleaseManager {
             this.runDuneRelease('distrib', distribArgs);
             core.endGroup();
             const tagName = this.context.ref.replace('refs/tags/', '');
-            const githubReleaseUrl = `https://github.com/${this.context.repository}/releases/tag/${tagName}`;
+            const githubReleaseUrl = draft
+                ? `https://github.com/${this.context.repository}/releases`
+                : `https://github.com/${this.context.repository}/releases/tag/${tagName}`;
             if (dryRun) {
                 core.startGroup('Publishing to GitHub (dry-run)');
                 core.info('DRY RUN: Would publish to GitHub');
@@ -30837,6 +30843,9 @@ class ReleaseManager {
                     }
                     if (publishMessage) {
                         publishArgs.push(`--message=${shellQuote(publishMessage)}`);
+                    }
+                    if (draft) {
+                        publishArgs.push('--draft');
                     }
                     this.info(`Running: dune-release publish ${publishArgs.join(' ')}`);
                     this.runDuneRelease('publish', publishArgs);
@@ -30927,7 +30936,7 @@ class ReleaseManager {
             else {
                 core.notice(`Release ${tagName} completed successfully!`);
                 if (toGithubReleases) {
-                    core.notice(`GitHub release: ${githubReleaseUrl}`);
+                    core.notice(draft ? `Draft GitHub release created, review and publish it from: ${githubReleaseUrl}` : `GitHub release: ${githubReleaseUrl}`);
                 }
                 if (toOpamRepository) {
                     core.notice(`Opam PR: ${opamPrUrl}`);
@@ -31095,16 +31104,17 @@ const parseInput = () => {
     const publishMessage = core.getInput('publish-message') || undefined;
     const preamble = core.getInput('pr-preamble-message') || undefined;
     const dryRun = core.getInput('dry-run') === 'true';
+    const draft = core.getInput('draft') === 'true';
     const [opamOwner, opamRepo] = opamRepositoryInput.split('/');
     if (!opamOwner || !opamRepo) {
         throw new Error(`Invalid opam-repository format: ${opamRepositoryInput}. Expected: owner/repo`);
     }
     const opamRepository = { owner: opamOwner, repo: opamRepo };
-    return { packages, verbose, changelogPath, token, toOpamRepository, toGithubReleases, includeSubmodules, opamRepository, buildDir, publishMessage, preamble, dryRun };
+    return { packages, verbose, changelogPath, token, toOpamRepository, toGithubReleases, includeSubmodules, opamRepository, buildDir, publishMessage, preamble, dryRun, draft };
 };
 async function main() {
     try {
-        const { packages, verbose, changelogPath, token, toOpamRepository, toGithubReleases, includeSubmodules, opamRepository, buildDir, publishMessage, preamble, dryRun } = parseInput();
+        const { packages, verbose, changelogPath, token, toOpamRepository, toGithubReleases, includeSubmodules, opamRepository, buildDir, publishMessage, preamble, dryRun, draft } = parseInput();
         const testRefOverride = process.env.TEST_OVERRIDE_GITHUB_REF || '';
         const ref = testRefOverride || process.env.GITHUB_REF || github.context.ref;
         if (!ref.startsWith('refs/tags/')) {
@@ -31154,6 +31164,7 @@ async function main() {
             core.info(`Submit to opam: ${toOpamRepository}`);
             core.info(`Include submodules: ${includeSubmodules}`);
             core.info(`Dry run: ${dryRun}`);
+            core.info(`Draft: ${draft}`);
             if (buildDir)
                 core.info(`Build directory: ${buildDir}`);
             if (publishMessage)
@@ -31163,7 +31174,7 @@ async function main() {
             core.info('================================');
         }
         const releaseManager = new core_1.ReleaseManager(context, verbose);
-        await releaseManager.runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository, includeSubmodules, opamRepository, buildDir, publishMessage, preamble, dryRun);
+        await releaseManager.runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository, includeSubmodules, opamRepository, buildDir, publishMessage, preamble, dryRun, draft);
         core.setOutput('release-status', 'success');
     }
     catch (error) {
