@@ -52,7 +52,7 @@ jobs:
           ocaml-compiler: 5.3.0
       - run: opam install . --deps-only -y
       - run: opam install dune-release -y
-      - uses: davesnx/dune-release-action/lint@v0.3
+      - uses: davesnx/dune-release-action/lint@v0.5.0
         with:
           packages: your-package
 ```
