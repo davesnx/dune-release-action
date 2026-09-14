@@ -164,12 +164,8 @@ export class ReleaseManager {
   }
 
   /**
-   * Resolve how to run dune-release, trying each candidate's `--version` in
-   * order and keeping the first that works: directly on PATH, then via
-   * `dune tools exec` if the project uses dune package management (detected
-   * by the presence of dune.lock), then via `opam exec`. opam itself is only
-   * needed for that last fallback lookup - dune-release's own commands
-   * (lint included) don't shell out to the opam binary.
+   * Try dune-release directly, then `dune tools exec` (if dune.lock exists), then `opam exec` - keeping the first that works.
+   * opam is only needed for that last fallback lookup, not by dune-release's own commands.
    */
   private checkDependencies(): void {
     core.startGroup('Checking dependencies');
@@ -182,9 +178,6 @@ export class ReleaseManager {
     ];
 
     for (const prefix of candidates) {
-      if (prefix.startsWith('dune tools exec')) {
-        this.info('dune.lock found: trying dune tools exec dune-release (this may lock and build it on first use, which can take a while)');
-      }
       try {
         const version = this.exec(`${prefix} --version`, { silent: true });
         this.info(`✓ using "${prefix}": ${version}`);
@@ -197,13 +190,10 @@ export class ReleaseManager {
     }
 
     core.endGroup();
-    core.error('✗ dune-release is not installed or not accessible');
-    core.error('');
-    core.error('To fix this, do one of:');
-    core.error('- Install dune-release: opam install dune-release');
-    core.error('- Install it as a dune dev tool: dune tools install dune-release');
-    core.error('- Make sure dune-release or opam is on PATH: https://opam.ocaml.org/doc/Install.html');
-    throw new Error('Missing required dependency: dune-release');
+    throw new Error(
+      'Missing required dependency: dune-release. Install it (opam install dune-release), ' +
+      'install it as a dune dev tool (dune tools install dune-release), or put dune-release or opam on PATH.'
+    );
   }
 
   /**

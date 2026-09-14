@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Run `dune-release` directly when it's on PATH, falling back to `dune tools exec dune-release` when a `dune.lock` file is present, then to `opam exec -- dune-release`. `opam` is no longer a hard requirement: it's checked only for that last fallback [#7](https://github.com/davesnx/dune-release-action/issues/7) [@davesnx](https://github.com/davesnx)
+- Run `dune-release` directly when it's on PATH, falling back to `dune tools exec` when `dune.lock` is present and then to `opam exec`, which is now the only case where `opam` is required [#7](https://github.com/davesnx/dune-release-action/issues/7) [@davesnx](https://github.com/davesnx)
 
 ## v0.5.0
 
