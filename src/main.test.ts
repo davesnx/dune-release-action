@@ -532,7 +532,7 @@ describe('Lint mode', () => {
     );
   });
 
-  test('falls back to opam exec when dune-release is not directly on PATH', () => {
+  test('falls back to opam exec when dune-release is not directly on PATH and there is no dune.lock', () => {
     // createMockExecutor matches with command.includes(pattern), and
     // 'opam exec -- dune-release --version' contains 'dune-release --version'
     // as a substring, so a pattern-based mock can't fail the first without
@@ -563,17 +563,70 @@ describe('Lint mode', () => {
 
     assert.deepStrictEqual(commands, [
       'dune-release --version',
-      'opam --version',
+      'opam exec -- dune-release --version',
+      'opam exec -- dune-release lint -p pkg'
+    ]);
+    assert.ok(!commands.some(c => c.includes('dune tools')), `dune tools exec should not have been tried: ${commands}`);
+  });
+
+  test('uses dune tools exec when dune.lock is present and dune-release is not directly on PATH', () => {
+    const mockExecutor = createMockExecutor({
+      files: new Map([['/workspace/dune.lock', '']]),
+      execErrors: new Map([
+        ['dune-release --version', new Error('command not found: dune-release')],
+      ])
+    });
+
+    const manager = new ReleaseManager(createTestContext({ ref: 'refs/heads/main', token: '' }), false, mockExecutor);
+    manager.runLint('pkg');
+
+    // The 'dune-release --version' error pattern doesn't collide with the
+    // 'dune tools exec ...' commands (no shared substring), so this succeeds
+    // through the plain pattern-matching mock.
+    assert.deepStrictEqual(mockExecutor.commands, [
+      'dune-release --version',
+      'dune tools exec dune-release -- --version',
+      'dune tools exec dune-release -- lint -p pkg'
+    ]);
+  });
+
+  test('falls back to opam exec when dune tools exec also fails', () => {
+    const commands: string[] = [];
+    const executor: Executor = {
+      exec(command: string): string {
+        commands.push(command);
+        if (command === 'dune-release --version') {
+          throw new Error('command not found: dune-release');
+        }
+        if (command === 'dune tools exec dune-release -- --version') {
+          throw new Error('dune-release is not installed as a dev tool');
+        }
+        return '';
+      },
+      fileExists: (path: string) => path === '/workspace/dune.lock',
+      readFile: () => '',
+      writeFile: () => {},
+      mkdirSync: () => {},
+      unlinkSync: () => {},
+      chdir: () => {},
+      cwd: () => '/workspace'
+    };
+
+    const manager = new ReleaseManager(createTestContext({ ref: 'refs/heads/main', token: '' }), false, executor);
+    manager.runLint('pkg');
+
+    assert.deepStrictEqual(commands, [
+      'dune-release --version',
+      'dune tools exec dune-release -- --version',
       'opam exec -- dune-release --version',
       'opam exec -- dune-release lint -p pkg'
     ]);
   });
 
-  test('fails with a clear error when both dune-release and opam are missing', () => {
+  test('fails with a clear error when dune-release cannot be found directly or via opam exec', () => {
     const mockExecutor = createMockExecutor({
       execErrors: new Map([
         ['dune-release --version', new Error('command not found: dune-release')],
-        ['opam --version', new Error('command not found: opam')],
       ])
     });
 
@@ -581,9 +634,12 @@ describe('Lint mode', () => {
 
     assert.throws(
       () => manager.runLint('pkg'),
-      /dune-release/
+      /Missing required dependency: dune-release/
     );
-    assert.ok(!mockExecutor.commands.includes('opam exec -- dune-release --version'), `should not have reached opam exec: ${mockExecutor.commands}`);
+    assert.deepStrictEqual(mockExecutor.commands, [
+      'dune-release --version',
+      'opam exec -- dune-release --version'
+    ]);
   });
 });
 

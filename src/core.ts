@@ -164,40 +164,46 @@ export class ReleaseManager {
   }
 
   /**
-   * Resolve how to run dune-release: directly if it's on PATH, otherwise via
-   * `opam exec` if opam can find it. opam itself is only needed for that
-   * fallback lookup - dune-release's own commands (lint included) don't
-   * shell out to the opam binary.
+   * Resolve how to run dune-release, trying each candidate's `--version` in
+   * order and keeping the first that works: directly on PATH, then via
+   * `dune tools exec` if the project uses dune package management (detected
+   * by the presence of dune.lock), then via `opam exec`. opam itself is only
+   * needed for that last fallback lookup - dune-release's own commands
+   * (lint included) don't shell out to the opam binary.
    */
   private checkDependencies(): void {
     core.startGroup('Checking dependencies');
 
-    try {
-      const version = this.exec('dune-release --version', { silent: true });
-      this.info(`✓ dune-release is installed: ${version}`);
-      this.duneReleasePrefix = 'dune-release';
-      core.endGroup();
-      return;
-    } catch (error: any) {
-      this.info('dune-release is not on PATH, checking the opam exec fallback');
+    const usesDunePkg = this.executor.fileExists(Path.join(this.context.workspace, 'dune.lock'));
+    const candidates = [
+      'dune-release',
+      ...(usesDunePkg ? ['dune tools exec dune-release --'] : []),
+      'opam exec -- dune-release'
+    ];
+
+    for (const prefix of candidates) {
+      if (prefix.startsWith('dune tools exec')) {
+        this.info('dune.lock found: trying dune tools exec dune-release (this may lock and build it on first use, which can take a while)');
+      }
+      try {
+        const version = this.exec(`${prefix} --version`, { silent: true });
+        this.info(`✓ using "${prefix}": ${version}`);
+        this.duneReleasePrefix = prefix;
+        core.endGroup();
+        return;
+      } catch (error: any) {
+        this.info(`"${prefix} --version" failed, trying the next option`);
+      }
     }
 
-    try {
-      const opamVersion = this.exec('opam --version', { silent: true });
-      this.info(`✓ opam is installed: ${opamVersion}`);
-      const duneReleaseVersion = this.exec('opam exec -- dune-release --version', { silent: true });
-      this.info(`✓ dune-release is installed (via opam exec): ${duneReleaseVersion}`);
-      this.duneReleasePrefix = 'opam exec -- dune-release';
-      core.endGroup();
-    } catch (error: any) {
-      core.endGroup();
-      core.error('✗ dune-release is not installed or not accessible, directly or via opam exec');
-      core.error('');
-      core.error('To fix this:');
-      core.error('Install dune-release: opam install dune-release');
-      core.error('Then either put it on PATH, or install opam so `opam exec -- dune-release` can find it: https://opam.ocaml.org/doc/Install.html');
-      throw new Error('Missing required dependency: dune-release');
-    }
+    core.endGroup();
+    core.error('✗ dune-release is not installed or not accessible');
+    core.error('');
+    core.error('To fix this, do one of:');
+    core.error('- Install dune-release: opam install dune-release');
+    core.error('- Install it as a dune dev tool: dune tools install dune-release');
+    core.error('- Make sure dune-release or opam is on PATH: https://opam.ocaml.org/doc/Install.html');
+    throw new Error('Missing required dependency: dune-release');
   }
 
   /**
