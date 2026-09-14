@@ -30496,56 +30496,35 @@ function composeOpamPrMessage(preamble, changelog) {
     const changes = changelog?.trim();
     return changes ? `${preamble.trim()}\n\n${changes}` : preamble.trim();
 }
-const FORK_POLL_INTERVAL_MS = 10_000;
-// GitHub's own fork docs say to contact support if a fork isn't ready after 5 minutes.
-const FORK_POLL_MAX_ATTEMPTS = 30;
-async function repoExists(octokit, owner, repo) {
-    try {
-        await octokit.rest.repos.get({ owner, repo });
-        return true;
-    }
-    catch {
-        return false;
-    }
-}
-async function pollForRepo(octokit, owner, repo, sleep, maxAttempts) {
-    for (let attempt = 0; attempt <= maxAttempts; attempt++) {
-        if (await repoExists(octokit, owner, repo)) {
-            return true;
-        }
-        if (attempt < maxAttempts) {
-            await sleep(FORK_POLL_INTERVAL_MS);
-        }
-    }
-    return false;
-}
 /**
- * Ensure `forkOwner/opamRepository.repo` exists on GitHub, forking it from
- * `opamRepository` if it's missing. `dune-release opam submit` pushes to this fork
- * as its `--remote-repo` and never creates it itself, so without this the user has to
- * fork opam-repository by hand before their first release.
+ * A PR to opam-repository needs a fork to push its branch to, and `dune-release
+ * opam submit` never creates one itself, so fork it if `forkOwner` doesn't have one.
  */
 async function ensureOpamRepositoryFork(octokit, opamRepository, forkOwner, sleep = ms => new Promise(resolve => setTimeout(resolve, ms))) {
     core.startGroup('Ensuring opam-repository fork');
+    const exists = () => octokit.rest.repos.get({ owner: forkOwner, repo: opamRepository.repo }).then(() => true, () => false);
     try {
-        if (await repoExists(octokit, forkOwner, opamRepository.repo)) {
+        if (await exists()) {
             core.info(`Fork ${forkOwner}/${opamRepository.repo} already exists`);
             return;
         }
         core.info(`Fork ${forkOwner}/${opamRepository.repo} not found, forking ${opamRepository.owner}/${opamRepository.repo}`);
         await octokit.rest.repos.createFork({ owner: opamRepository.owner, repo: opamRepository.repo });
-        const ready = await pollForRepo(octokit, forkOwner, opamRepository.repo, sleep, FORK_POLL_MAX_ATTEMPTS);
-        if (!ready) {
-            throw new Error(`Timed out waiting for the fork ${forkOwner}/${opamRepository.repo} to become available`);
+        // Forking is asynchronous; GitHub's docs say to contact support if it isn't ready after 5 minutes.
+        for (let attempt = 0; attempt < 30; attempt++) {
+            await sleep(10_000);
+            if (await exists()) {
+                core.info(`Fork ${forkOwner}/${opamRepository.repo} is ready`);
+                return;
+            }
         }
-        core.info(`Fork ${forkOwner}/${opamRepository.repo} is ready`);
+        throw new Error(`Timed out waiting for the fork ${forkOwner}/${opamRepository.repo} to become available`);
     }
     catch (error) {
         const message = error.message || error.toString();
-        throw new Error(`Could not create a fork of ${opamRepository.owner}/${opamRepository.repo}: ${message}\n\n` +
-            `Fork it manually at https://github.com/${opamRepository.owner}/${opamRepository.repo}/fork, or grant the token fork ` +
-            `permission: 'repo' scope for a classic personal access token, or 'Administration: write' and 'Contents: read' for a ` +
-            `fine-grained token.`);
+        throw new Error(`Could not fork ${opamRepository.owner}/${opamRepository.repo}: ${message}. ` +
+            `Fork it manually at https://github.com/${opamRepository.owner}/${opamRepository.repo}/fork, or grant the token ` +
+            `'repo' scope (classic) or 'Administration: write' + 'Contents: read' (fine-grained).`);
     }
     finally {
         core.endGroup();

@@ -116,8 +116,7 @@ async function main() {
       if (preamble) core.info(`Opam PR preamble: ${preamble}`);
       core.info('================================');
     }
-    // Submission needs a fork to push the release branch to (dune-release never creates one itself).
-    // Do this before the release runs, so a fork failure doesn't leave a half-published GitHub release behind.
+    // Before the release runs, so a fork failure can't leave a half-published GitHub release behind.
     if (toOpamRepository && !dryRun && !draft) {
       await ensureOpamRepositoryFork(octokit, opamRepository, effectiveUser);
     }

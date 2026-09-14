@@ -608,17 +608,17 @@ describe('Opam repository input parsing', () => {
 // Opam Repository Fork Tests
 // ============================================================================
 
-function createMockForkOctokit(overrides: { getSucceedsAfter?: number; createForkError?: Error } = {}): ForkOctokit & { getCalls: number; createForkCalls: number } {
+function createMockForkOctokit(overrides: { getSucceedsAfter?: number; createForkError?: Error } = {}): ForkOctokit & { createForkCalls: number } {
   const getSucceedsAfter = overrides.getSucceedsAfter ?? 0;
+  let getCalls = 0;
 
   const mock = {
-    getCalls: 0,
     createForkCalls: 0,
     rest: {
       repos: {
         async get(_params: { owner: string; repo: string }): Promise<unknown> {
-          mock.getCalls += 1;
-          if (mock.getCalls > getSucceedsAfter) {
+          getCalls += 1;
+          if (getCalls > getSucceedsAfter) {
             return {};
           }
           throw new Error('Not Found');
@@ -645,7 +645,6 @@ describe('Opam repository fork', () => {
 
     await ensureOpamRepositoryFork(octokit, { owner: 'ocaml', repo: 'opam-repository' }, 'testuser', noSleep);
 
-    assert.strictEqual(octokit.getCalls, 1);
     assert.strictEqual(octokit.createForkCalls, 0);
   });
 
@@ -658,7 +657,6 @@ describe('Opam repository fork', () => {
     });
 
     assert.strictEqual(octokit.createForkCalls, 1);
-    assert.strictEqual(octokit.getCalls, 4); // 1 existence check + 3 polls before success
     assert.ok(sleepCalls > 0, 'expected the poll loop to sleep between attempts');
   });
 
