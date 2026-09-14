@@ -24,16 +24,11 @@ There are two public actions:
 
 ### Build Tools
 
-Both actions need `dune-release`, resolved in this order:
-1. Directly on PATH: they run it directly.
-2. Via `dune tools exec dune-release`, if a `dune.lock` file is present (the project uses dune package management).
-3. Via `opam exec -- dune-release`, which needs `opam` on PATH. No opam switch or root setup is required beyond that: `opam` is only used to locate `dune-release`, since `dune-release lint` itself lints `.opam` files through opam's OCaml libraries ([`OpamFileTools.lint`](https://github.com/tarides/dune-release/blob/main/lib/lint.ml)), not by shelling out to the `opam` binary.
+Both actions need `dune-release` and detect how to run it. If the project has a `dune.lock` directory (dune package management), they run `dune tools exec dune-release`. Otherwise they run `opam exec -- dune-release`, which needs only the `opam` binary, not an opam switch. To override this detection, put `dune-release` on `$PATH`: when it is found there, it runs directly.
 
-If none of these work, the actions fail with install instructions.
+The actions do not install anything for you. That stays in your workflow so you keep control over the OCaml switch, caching, and setup policy.
 
-The actions validate this but do not install anything for you. That stays in your workflow so you keep control over the OCaml switch, caching, and setup policy.
-
-Install with `opam` (the common setup):
+With opam:
 ```yaml
 - uses: ocaml/setup-ocaml@v3
   with:
@@ -41,18 +36,12 @@ Install with `opam` (the common setup):
 
 - run: opam install dune-release -y
 ```
-`ocaml/setup-ocaml` installs tools inside the opam switch and does not put them on PATH by itself (its examples run everything through `opam exec --`), so with this setup the actions use the `opam exec` fallback. A project that only uses [dune package management](https://dune.readthedocs.io/en/stable/tutorials/dune-package-management/index.html) has no opam switch; see below.
 
-#### Projects using dune package management (`dune pkg`)
-
-`dune-release` is a supported [dune dev tool](https://dune.readthedocs.io/en/stable/reference/dune-tools.html), but dune does not put dev tools on PATH. When a `dune.lock` file exists and `dune-release` is not directly on PATH, the actions run it via `dune tools exec dune-release`, which resolves, locks, and builds `dune-release` on first use - that first run can take a while.
-
-To avoid that first-run cost, pre-install it and add its directory to PATH before these actions run:
+With [dune package management](https://dune.readthedocs.io/en/stable/tutorials/dune-package-management/index.html), nothing else is needed: `dune tools exec` locks and builds `dune-release` on first use, which can take a while. To pre-install it, or to put it on `$PATH` yourself:
 ```yaml
 - run: dune tools install dune-release
 - run: realpath "$(dirname "$(dune tools which dune-release)")" >> "$GITHUB_PATH"
 ```
-In a local shell, `eval $(dune tools env)` does the same for the current session. This step is optional: it just caches and speeds up what the actions would otherwise do themselves through `dune tools exec`.
 
 ## Usage
 
