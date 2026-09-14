@@ -2,7 +2,7 @@
 
 import * as core from '@actions/core';
 import * as github from '@actions/github';
-import { GitHubContext, OpamRepository, ReleaseConfig, ReleaseManager, parsePackagesInput } from './core';
+import { GitHubContext, OpamRepository, ReleaseConfig, ReleaseManager, ensureOpamRepositoryFork, parsePackagesInput } from './core';
 
 export const DEFAULT_CHANGELOG_PATH = './CHANGES.md';
 
@@ -82,7 +82,7 @@ async function main() {
         throw authError;
       }
     }
-    const opamRepoFork = `${effectiveUser}/opam-repository`;
+    const opamRepoFork = `${effectiveUser}/${opamRepository.repo}`;
     const defaultOpamPath = process.env.RUNNER_TEMP ? '/home/runner/git/opam-repository' : '/tmp/opam-repository-test';
     const opamRepoLocal = core.getInput('opam-repo-local') || defaultOpamPath;
 
@@ -116,6 +116,12 @@ async function main() {
       if (preamble) core.info(`Opam PR preamble: ${preamble}`);
       core.info('================================');
     }
+    // Submission needs a fork to push the release branch to (dune-release never creates one itself).
+    // Do this before the release runs, so a fork failure doesn't leave a half-published GitHub release behind.
+    if (toOpamRepository && !dryRun && !draft) {
+      await ensureOpamRepositoryFork(octokit, opamRepository, effectiveUser);
+    }
+
     const releaseManager = new ReleaseManager(context, verbose);
     await releaseManager.runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository, includeSubmodules, opamRepository, buildDir, publishMessage, preamble, dryRun, draft);
 

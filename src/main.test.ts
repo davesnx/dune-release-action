@@ -1,6 +1,6 @@
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert';
-import { ReleaseManager, GitHubContext, ReleaseConfig, Executor, parsePackagesInput, shellQuote, composeOpamPrMessage } from './core';
+import { ReleaseManager, GitHubContext, ReleaseConfig, Executor, ForkOctokit, ensureOpamRepositoryFork, parsePackagesInput, shellQuote, composeOpamPrMessage } from './core';
 import Fs from 'fs';
 import Path from 'path';
 import { DEFAULT_CHANGELOG_PATH } from './main';
@@ -601,6 +601,78 @@ describe('Opam repository input parsing', () => {
 
     // This should be detected as invalid
     assert.ok(!opamOwner || !opamRepo || opamRepo === undefined);
+  });
+});
+
+// ============================================================================
+// Opam Repository Fork Tests
+// ============================================================================
+
+function createMockForkOctokit(overrides: { getSucceedsAfter?: number; createForkError?: Error } = {}): ForkOctokit & { getCalls: number; createForkCalls: number } {
+  const getSucceedsAfter = overrides.getSucceedsAfter ?? 0;
+
+  const mock = {
+    getCalls: 0,
+    createForkCalls: 0,
+    rest: {
+      repos: {
+        async get(_params: { owner: string; repo: string }): Promise<unknown> {
+          mock.getCalls += 1;
+          if (mock.getCalls > getSucceedsAfter) {
+            return {};
+          }
+          throw new Error('Not Found');
+        },
+        async createFork(_params: { owner: string; repo: string }): Promise<unknown> {
+          mock.createForkCalls += 1;
+          if (overrides.createForkError) {
+            throw overrides.createForkError;
+          }
+          return {};
+        }
+      }
+    }
+  };
+
+  return mock;
+}
+
+const noSleep = async (_ms: number): Promise<void> => {};
+
+describe('Opam repository fork', () => {
+  test('does nothing when the fork already exists', async () => {
+    const octokit = createMockForkOctokit({ getSucceedsAfter: 0 });
+
+    await ensureOpamRepositoryFork(octokit, { owner: 'ocaml', repo: 'opam-repository' }, 'testuser', noSleep);
+
+    assert.strictEqual(octokit.getCalls, 1);
+    assert.strictEqual(octokit.createForkCalls, 0);
+  });
+
+  test('creates the fork and waits until it appears', async () => {
+    const octokit = createMockForkOctokit({ getSucceedsAfter: 3 });
+    let sleepCalls = 0;
+
+    await ensureOpamRepositoryFork(octokit, { owner: 'ocaml', repo: 'opam-repository' }, 'testuser', async () => {
+      sleepCalls += 1;
+    });
+
+    assert.strictEqual(octokit.createForkCalls, 1);
+    assert.strictEqual(octokit.getCalls, 4); // 1 existence check + 3 polls before success
+    assert.ok(sleepCalls > 0, 'expected the poll loop to sleep between attempts');
+  });
+
+  test('fails with a manual-fork fallback when fork creation fails', async () => {
+    const octokit = createMockForkOctokit({ getSucceedsAfter: 1, createForkError: new Error('Resource not accessible by integration') });
+
+    await assert.rejects(
+      () => ensureOpamRepositoryFork(octokit, { owner: 'ocaml', repo: 'opam-repository' }, 'testuser', noSleep),
+      (error: Error) => {
+        assert.ok(error.message.includes('https://github.com/ocaml/opam-repository/fork'), error.message);
+        assert.ok(error.message.includes('Resource not accessible by integration'), error.message);
+        return true;
+      }
+    );
   });
 });
 
