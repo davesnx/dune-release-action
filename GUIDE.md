@@ -2,6 +2,8 @@
 
 A practical guide to releasing OCaml packages with `dune-release-action`.
 
+See the README's [Build Tools](./README.md#build-tools) section for how `dune-release` needs to be made available, including notes for projects that use dune package management instead of opam.
+
 ## Requisites: the workflow
 
 The release workflow (for example: `.github/workflow/ci.yml`) should trigger on:

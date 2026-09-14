@@ -24,13 +24,14 @@ There are two public actions:
 
 ### Build Tools
 
-Both actions expect these tools to be available in your GitHub Actions environment:
-- `opam` - OCaml package manager
-- `dune-release` - Release automation tool
+Both actions need `dune-release`:
+- If `dune-release` is directly on PATH, they run it directly.
+- Otherwise, they fall back to `opam exec -- dune-release`, which needs `opam` on PATH. No opam switch or root setup is required beyond that: `opam` is only used to locate `dune-release`, since `dune-release lint` itself lints `.opam` files through opam's OCaml libraries ([`OpamFileTools.lint`](https://github.com/tarides/dune-release/blob/main/lib/lint.ml)), not by shelling out to the `opam` binary.
+- If neither is found, the actions fail with install instructions.
 
-The actions validate that these tools are available, but they do not install them for you. That stays in your workflow so you keep control over the OCaml switch, caching, and setup policy.
+The actions validate this but do not install anything for you. That stays in your workflow so you keep control over the OCaml switch, caching, and setup policy.
 
-Install with:
+Install with `opam` (the common setup):
 ```yaml
 - uses: ocaml/setup-ocaml@v3
   with:
@@ -38,6 +39,16 @@ Install with:
 
 - run: opam install dune-release -y
 ```
+`ocaml/setup-ocaml` installs tools inside the opam switch and does not put them on PATH by itself (its examples run everything through `opam exec --`), so with this setup the actions use the `opam exec` fallback. A project that only uses [dune package management](https://dune.readthedocs.io/en/stable/tutorials/dune-package-management/index.html) has no opam switch; see below.
+
+#### Projects using dune package management (`dune pkg`)
+
+`dune-release` is a supported [dune dev tool](https://dune.readthedocs.io/en/stable/reference/dune-tools.html), but dune does not put dev tools on PATH. Install it and add its directory to PATH before these actions run:
+```yaml
+- run: dune tools install dune-release
+- run: realpath "$(dirname "$(dune tools which dune-release)")" >> "$GITHUB_PATH"
+```
+In a local shell, `eval $(dune tools env)` does the same for the current session. Dune package management is still documented as not final, so these actions do not add a `dune tools exec` fallback of their own.
 
 ## Usage
 
