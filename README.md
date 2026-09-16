@@ -126,6 +126,7 @@ jobs:
     include-submodules: true              # Include git submodules in the tarball
     pr-preamble-message: 'cc @my-org/release-team' # Text prepended to the opam PR description
     draft: false                          # Create the GitHub release as a draft (skips the opam PR)
+    tag-prefix: 'mypkg.'                  # Strip a literal prefix from the tag: mypkg.1.2.0 releases version 1.2.0
 ```
 
 ## Inputs
@@ -163,6 +164,7 @@ Your `github-token` secret must have these scopes:
 | `publish-message` | Custom message for the GitHub release publication | (changelog content) |
 | `draft` | If true, creates the GitHub release as a draft and skips the opam-repository PR. See [Draft releases](#draft-releases) | `false` |
 | `dry-run` | Validate setup without publishing: runs lint, changelog validation, and distrib, but skips the GitHub release and opam submission | `false` |
+| `tag-prefix` | Literal prefix to strip from the git tag to get the package version: tag `mypkg.1.2.0` with `tag-prefix: 'mypkg.'` releases version `1.2.0`. The full tag is still passed to dune-release. See [Prefixed tags](#prefixed-tags) | (none) |
 
 ### Draft releases
 
@@ -179,6 +181,27 @@ Set `draft: true` to inspect the release tarball before anyone can install it:
 The action runs `dune-release publish --draft`, so the GitHub release is created as a draft with the tarball attached. Drafts are only visible to maintainers, on the repository's releases page. Review the tarball there and press **Publish release** when you are happy with it.
 
 Draft mode never opens the opam-repository PR, even if `to-opam-repository` is `true` (the action warns about it). A draft's tarball URL is temporary and changes when the release is published, so an opam PR opened at that point would break. Submit to opam once the release is published, for example with `dune-release opam pkg && dune-release opam submit` locally.
+
+### Prefixed tags
+
+If your tags carry a literal prefix, such as `mypkg.1.2.0`, set `tag-prefix` so the action knows where the version starts:
+
+```yaml
+on:
+  push:
+    tags:
+      - 'mypkg.*'
+
+# ...
+
+- uses: davesnx/dune-release-action@v0.5.0
+  with:
+    packages: 'mypkg'
+    github-token: ${{ secrets.GH_TOKEN }}
+    tag-prefix: 'mypkg.'
+```
+
+The prefix is removed to get the package version and the `version` output, and the full tag is passed to `dune-release` through `--tag` and `--pkg-version`. Changelog headers may carry the prefix or not: `## mypkg.1.2.0` and `## 1.2.0` both match version `1.2.0`. The action fails early if the tag does not start with the configured prefix.
 
 ## Lint Action Inputs
 
@@ -216,6 +239,7 @@ Your `CHANGES.md` should follow this format:
 - `## 1.0.0` - Without prefix
 - `## 1.0.0 (2025-10-13)` - With date
 - `## 1.0.0-beta.1` - Pre-release versions
+- `## mypkg.1.0.0 (2025-10-13)` - With `tag-prefix: 'mypkg.'` (the prefix is optional in the header)
 
 ## Outputs
 
@@ -223,7 +247,7 @@ Release action outputs for `davesnx/dune-release-action@v0.5.0`:
 
 | Output | Description |
 |--------|-------------|
-| `version` | Extracted version from git tag |
+| `version` | Package version extracted from the git tag, with `tag-prefix` removed |
 | `release-status` | Status of the release (`success` or `failed`) |
 | `github-release-url` | URL of the created GitHub release. With `draft: true` this is the repository releases page, where drafts are listed |
 | `opam-pr-url` | URL of the opam-repository pull request |

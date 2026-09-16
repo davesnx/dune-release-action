@@ -620,6 +620,71 @@ describe('extractVersionChangelog', () => {
 });
 
 // ============================================================================
+// Tag prefix Tests
+// ============================================================================
+
+describe('tag prefix', () => {
+  afterEach(cleanupTestFiles);
+
+  const prefixed = `# Changelog
+
+## pkg.1.2.0 (2025-01-01)
+
+- Added feature A with a prefixed header
+
+## 1.1.0 (2024-12-01)
+
+- Plain header release
+`;
+
+  test('parses prefixed headers as the unprefixed version', () => {
+    const entries = parseChangelog(createTestFile(prefixed), 'pkg.');
+
+    assert.strictEqual(entries.length, 2);
+    assert.strictEqual(entries[0].version, '1.2.0');
+    assert.strictEqual(entries[0].date, '2025-01-01');
+    assert.strictEqual(entries[0].content, '- Added feature A with a prefixed header');
+    assert.strictEqual(entries[1].version, '1.1.0');
+  });
+
+  test('prefixed headers are not version entries without a prefix', () => {
+    const entries = parseChangelog(createTestFile(prefixed));
+
+    assert.deepStrictEqual(entries.map(e => e.version), ['unreleased', '1.1.0']);
+  });
+
+  test('escapes regex metacharacters in the prefix', () => {
+    const testFile = createTestFile(`## my+pkg.1.0.0\n\n- Release\n`);
+
+    assert.strictEqual(parseChangelog(testFile, 'my+pkg.')[0].version, '1.0.0');
+    assert.strictEqual(parseChangelog(testFile, 'myypkg.').length, 0);
+  });
+
+  test('validateChangelog matches a prefixed header against the stripped version', () => {
+    const testFile = createTestFile(prefixed);
+
+    assert.strictEqual(validateChangelog(testFile, '1.2.0', 'pkg.').valid, true);
+
+    const withoutPrefix = validateChangelog(testFile, '1.2.0');
+    assert.strictEqual(withoutPrefix.valid, false);
+    assert.ok(withoutPrefix.errors.some(e => e.includes('does not contain an entry for version 1.2.0')));
+  });
+
+  test('extractVersionChangelog writes an unprefixed header', () => {
+    const testFile = createTestFile(prefixed);
+    const outputFile = Path.join(OS.tmpdir(), `changelog-prefix-out-${Date.now()}.md`);
+    testFiles.push(outputFile);
+
+    extractVersionChangelog(testFile, '1.2.0', outputFile, 'pkg.');
+
+    const extracted = Fs.readFileSync(outputFile, 'utf-8');
+    assert.ok(extracted.startsWith('## 1.2.0 (2025-01-01)\n'));
+    assert.ok(extracted.includes('- Added feature A with a prefixed header'));
+    assert.ok(!extracted.includes('pkg.'));
+  });
+});
+
+// ============================================================================
 // formatCommitEntry Tests
 // ============================================================================
 

@@ -1,8 +1,9 @@
-import { test, describe, beforeEach } from 'node:test';
+import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 import { ReleaseManager, GitHubContext, ReleaseConfig, Executor, parsePackagesInput, shellQuote, composeOpamPrMessage } from './core';
 import Fs from 'fs';
 import Path from 'path';
+import OS from 'os';
 import { DEFAULT_CHANGELOG_PATH } from './main';
 
 // Mock executor for testing
@@ -165,34 +166,98 @@ describe('ReleaseManager', () => {
 // ============================================================================
 
 describe('Version extraction', () => {
-  test('extracts version from tag ref', async () => {
+  const tempFiles: string[] = [];
+  afterEach(() => {
+    for (const file of tempFiles.splice(0)) {
+      try { Fs.unlinkSync(file); } catch { /* already gone */ }
+    }
+  });
+
+  function writeChangelog(name: string, content: string): string {
+    const changelogPath = Path.join(OS.tmpdir(), `${name}-${process.pid}.md`);
+    Fs.writeFileSync(changelogPath, content);
+    tempFiles.push(changelogPath, changelogPath.replace(/\.md$/, '-0.1.0.md'));
+    return changelogPath;
+  }
+
+  async function runRelease(
+    ref: string,
+    tagPrefix: string,
+    opts: { changelogPath?: string; dryRun?: boolean } = {}
+  ): Promise<string[]> {
     const mockExecutor = createMockExecutor({
-      execResults: new Map([
-        ['opam --version', '2.1.0'],
-        ['dune-release --version', '2.0.0'],
-        ['git ls-remote --tags origin', ''],
-        ['git config', ''],
-      ])
+      execResults: new Map([['dune-release --version', '2.0.0']]),
+      files: new Map(opts.changelogPath ? [[opts.changelogPath, '']] : [])
     });
+    const manager = new ReleaseManager(createTestContext({ ref }), false, mockExecutor);
+    const publish = !opts.dryRun;
+    await manager.runRelease('pkg', opts.changelogPath ?? null, createTestConfig(), publish, publish, false, { owner: 'ocaml', repo: 'opam-repository' }, undefined, undefined, undefined, Boolean(opts.dryRun), false, tagPrefix);
+    return mockExecutor.commands;
+  }
 
-    const context = createTestContext({ ref: 'refs/tags/v1.2.3' });
-    const manager = new ReleaseManager(context, false, mockExecutor);
+  const duneReleaseCommands = (commands: string[]): string[] =>
+    commands.filter(c => /^dune-release (distrib|publish|opam) /.test(c));
 
-    // We can't directly test extractVersion since it's private,
-    // but we can verify the ref is correctly stored
-    assert.strictEqual(context.ref, 'refs/tags/v1.2.3');
+  test('prefixed tag passes --tag and --pkg-version to distrib, publish, opam pkg and opam submit', async () => {
+    const commands = await runRelease('refs/tags/pkg.0.1.0', 'pkg.');
+    const releaseCommands = duneReleaseCommands(commands);
+
+    assert.deepStrictEqual(
+      releaseCommands.map(c => c.replace(/^dune-release /, '').replace(/ -.*$/, '').replace(/ --.*$/, '')),
+      ['distrib', 'publish', 'opam pkg', 'opam submit']
+    );
+    for (const command of releaseCommands) {
+      assert.ok(command.includes(' --tag=pkg.0.1.0'), command);
+      assert.ok(command.includes(' --pkg-version=0.1.0'), command);
+    }
   });
 
-  test('handles tag without v prefix', () => {
-    const context = createTestContext({ ref: 'refs/tags/1.2.3' });
-    const expectedVersion = context.ref.replace('refs/tags/', '');
-    assert.strictEqual(expectedVersion, '1.2.3');
+  test('prefixed tag uses the stripped version for the release commit and opam branch', async () => {
+    const commands = await runRelease('refs/tags/pkg.0.1.0', 'pkg.');
+    const commit = commands.find(c => c.startsWith('git commit '));
+
+    assert.ok(commit, `no git commit was run: ${commands}`);
+    assert.ok(commit.includes('release 0.1.0\n'), commit);
+    assert.ok(commit.includes(':opam-repository:release-pkg-0.1.0'), commit);
   });
 
-  test('handles pre-release versions', () => {
-    const context = createTestContext({ ref: 'refs/tags/v2.0.0-beta.1' });
-    const expectedVersion = context.ref.replace('refs/tags/', '');
-    assert.strictEqual(expectedVersion, 'v2.0.0-beta.1');
+  test('without a prefix no --tag or --pkg-version is passed', async () => {
+    const commands = await runRelease('refs/tags/v1.2.3', '');
+    const releaseCommands = duneReleaseCommands(commands);
+
+    assert.strictEqual(releaseCommands.length, 4);
+    for (const command of releaseCommands) {
+      assert.ok(!command.includes('--tag='), command);
+      assert.ok(!command.includes('--pkg-version='), command);
+    }
+  });
+
+  test('prefixed tag validates a changelog with prefixed headers and extracts an unprefixed one', async () => {
+    const changelogPath = writeChangelog('changes-prefixed', '# Changelog\n\n## pkg.0.1.0 (2026-01-01)\n\n- Prefixed release entry\n');
+    const commands = await runRelease('refs/tags/pkg.0.1.0', 'pkg.', { changelogPath, dryRun: true });
+    const releaseCommands = duneReleaseCommands(commands);
+
+    assert.deepStrictEqual(releaseCommands.map(c => c.split(' ')[1]), ['distrib', 'opam']);
+    for (const command of releaseCommands) {
+      assert.ok(command.includes(' --tag=pkg.0.1.0 --pkg-version=0.1.0'), command);
+    }
+    const extracted = Fs.readFileSync(changelogPath.replace(/\.md$/, '-0.1.0.md'), 'utf-8');
+    assert.ok(extracted.startsWith('## 0.1.0 (2026-01-01)\n'), extracted);
+    assert.ok(extracted.includes('- Prefixed release entry'), extracted);
+  });
+
+  test('prefixed tag also accepts a changelog with unprefixed headers', async () => {
+    const changelogPath = writeChangelog('changes-unprefixed', '## 0.1.0\n\n- Plain header, prefixed tag\n');
+    const commands = await runRelease('refs/tags/pkg.0.1.0', 'pkg.', { changelogPath, dryRun: true });
+
+    assert.ok(commands.some(c => c.startsWith('dune-release distrib ')), `distrib was not run: ${commands}`);
+  });
+
+  test('rejects a tag that does not start with the prefix', async () => {
+    await assert.rejects(
+      runRelease('refs/tags/other.0.1.0', 'pkg.', { dryRun: true }),
+      /Tag other\.0\.1\.0 does not start with the configured tag-prefix "pkg\."/
+    );
   });
 });
 
@@ -710,6 +775,12 @@ describe('Action metadata', () => {
     const actionYml = Fs.readFileSync(Path.join(process.cwd(), 'action.yml'), 'utf-8');
 
     assert.match(actionYml, /\n  draft:\n(?: {4}.*\n)*? {4}default: 'false'\n/);
+  });
+
+  test('declares the tag-prefix input defaulting to empty', () => {
+    const actionYml = Fs.readFileSync(Path.join(process.cwd(), 'action.yml'), 'utf-8');
+
+    assert.match(actionYml, /\n  tag-prefix:\n(?: {4}.*\n)*? {4}default: ''\n/);
   });
 });
 
