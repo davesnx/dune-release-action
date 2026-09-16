@@ -24,7 +24,7 @@ There are two public actions:
 
 ### Build Tools
 
-Both actions need `dune-release` and detect how to run it, based on an `_opam` folder or a `dune.lock` folder.
+Both actions need `dune-release` and detect how to run it: directly when it is on `PATH`, with `dune tools exec` when the project has a `dune.lock` folder, otherwise with `opam exec`.
 
 The actions do not install anything for you. That stays in your workflow so you keep control over the OCaml switch, caching, and setup policy.
 
