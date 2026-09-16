@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Run `dune-release` directly when it's on PATH, falling back to `dune tools exec` when `dune.lock` is present and then to `opam exec`, which is now the only case where `opam` is required [#7](https://github.com/davesnx/dune-release-action/issues/7) [@davesnx](https://github.com/davesnx)
+
 ## v0.5.0
 
 - Add `draft` input to create the GitHub release as a draft, skipping the opam-repository PR, so the tarball can be inspected before publishing [#4](https://github.com/davesnx/dune-release-action/issues/4) [@davesnx](https://github.com/davesnx)
