@@ -29978,19 +29978,29 @@ exports.getVersions = getVersions;
 exports.addVersionSection = addVersionSection;
 const core = __importStar(__nccwpck_require__(7484));
 const fs_1 = __importDefault(__nccwpck_require__(9896));
-const VERSION_PATTERN = /^#{1,3}\s+v?(\d+(?:\.\d+)*(?:-[a-zA-Z0-9.]+)?)\s*(?:\(([^)]+)\))?/;
 const TITLE_PATTERN = /^#\s+(Changelog|Changes)\s*$/i;
-function parseChangelog(changelogPath) {
+/**
+ * Escape special regex characters in a string
+ */
+function escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+function versionPattern(prefix = '') {
+    const optionalPrefix = prefix ? `(?:${escapeRegex(prefix)})?` : '';
+    return new RegExp(`^#{1,3}\\s+${optionalPrefix}v?(\\d+(?:\\.\\d+)*(?:-[a-zA-Z0-9.]+)?)\\s*(?:\\(([^)]+)\\))?`);
+}
+function parseChangelog(changelogPath, prefix = '') {
     try {
         const content = fs_1.default.readFileSync(changelogPath, 'utf-8');
         const entries = [];
         const lines = content.split('\n');
+        const pattern = versionPattern(prefix);
         let currentEntry = null;
         let currentContent = [];
         let foundFirstVersion = false;
         let unreleasedContent = [];
         for (const line of lines) {
-            const versionMatch = line.match(VERSION_PATTERN);
+            const versionMatch = line.match(pattern);
             if (versionMatch) {
                 if (!foundFirstVersion && unreleasedContent.length > 0) {
                     const trimmed = unreleasedContent.join('\n').trim();
@@ -30034,7 +30044,7 @@ function normalizeVersion(version) {
 function versionsMatch(a, b) {
     return normalizeVersion(a) === normalizeVersion(b);
 }
-function validateChangelog(changelogPath, expectedVersion) {
+function validateChangelog(changelogPath, expectedVersion, prefix = '') {
     const validation = {
         valid: true,
         hasUnreleased: false,
@@ -30048,7 +30058,7 @@ function validateChangelog(changelogPath, expectedVersion) {
             validation.errors.push(`Changelog file not found: ${changelogPath}`);
             return validation;
         }
-        const entries = parseChangelog(changelogPath);
+        const entries = parseChangelog(changelogPath, prefix);
         if (entries.length === 0) {
             validation.valid = false;
             validation.errors.push('Changelog is empty or could not be parsed');
@@ -30089,9 +30099,9 @@ function validateChangelog(changelogPath, expectedVersion) {
 /**
  * Extract version-specific changelog content and write to a temporary file
  */
-function extractVersionChangelog(changelogPath, version, outputPath) {
+function extractVersionChangelog(changelogPath, version, outputPath, prefix = '') {
     try {
-        const entries = parseChangelog(changelogPath);
+        const entries = parseChangelog(changelogPath, prefix);
         const normalizedVersion = version.replace(/^v/, '');
         const versionEntry = entries.find(e => e.version === normalizedVersion ||
             e.version === `v${normalizedVersion}`);
@@ -30183,12 +30193,6 @@ function findUnreleasedSection(content, unreleasedHeader) {
         contentStart: headerEnd,
         contentEnd
     };
-}
-/**
- * Escape special regex characters in a string
- */
-function escapeRegex(str) {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 /**
  * Add entries to the Unreleased section of the changelog
@@ -30602,17 +30606,22 @@ class ReleaseManager {
             'install it as a dune dev tool (dune tools install dune-release), or put dune-release or opam on PATH.');
     }
     /**
-     * Extract version from git tag
+     * Extract the package version from the git tag, stripping `tagPrefix` when configured
+     * (tag `mypkg.1.2.0` with prefix `mypkg.` gives version `1.2.0`).
      */
-    extractVersion() {
+    extractVersion(tagPrefix = '') {
         try {
             const tag = this.context.ref.replace('refs/tags/', '');
             if (!tag || tag === this.context.ref) {
                 throw new Error('No valid git tag found in ref');
             }
-            core.setOutput('version', tag);
-            this.info(`Extracted version: ${tag}`);
-            return tag;
+            if (tagPrefix && !tag.startsWith(tagPrefix)) {
+                throw new Error(`Tag ${tag} does not start with the configured tag-prefix "${tagPrefix}"`);
+            }
+            const version = tagPrefix ? tag.slice(tagPrefix.length) : tag;
+            core.setOutput('version', version);
+            this.info(`Extracted version: ${version}`);
+            return version;
         }
         catch (error) {
             core.error(`Failed to extract version from ref ${this.context.ref}: ${error.message}`);
@@ -30737,13 +30746,15 @@ class ReleaseManager {
     /**
      * Run the full release pipeline
      */
-    async runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository, includeSubmodules = false, opamRepository = { owner: 'ocaml', repo: 'opam-repository' }, buildDir, publishMessage, preamble, dryRun = false, draft = false) {
+    async runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository, includeSubmodules = false, opamRepository = { owner: 'ocaml', repo: 'opam-repository' }, buildDir, publishMessage, preamble, dryRun = false, draft = false, tagPrefix = '') {
         let versionChangelogPath = null;
         try {
             this.checkDependencies();
             this.validateNewTag();
             this.configureGit();
-            const version = this.extractVersion();
+            const version = this.extractVersion(tagPrefix);
+            const tagName = this.context.ref.replace('refs/tags/', '');
+            const tagArgs = tagPrefix ? [`--tag=${tagName}`, `--pkg-version=${version}`] : [];
             if (draft && toOpamRepository) {
                 core.warning('Draft mode: the opam-repository PR will not be opened. Publish the draft GitHub release first, then submit to opam.');
                 toOpamRepository = false;
@@ -30771,7 +30782,7 @@ class ReleaseManager {
                     changelogPath = null;
                 }
                 else {
-                    const validation = (0, changelog_1.validateChangelog)(changelogPath, version);
+                    const validation = (0, changelog_1.validateChangelog)(changelogPath, version, tagPrefix);
                     if (validation.warnings.length > 0) {
                         validation.warnings.forEach(warning => core.warning(warning));
                     }
@@ -30782,7 +30793,7 @@ class ReleaseManager {
                     const changelogFilename = path_1.default.basename(changelogPath, path_1.default.extname(changelogPath));
                     const absoluteChangelogPath = path_1.default.resolve(changelogPath);
                     versionChangelogPath = path_1.default.join(path_1.default.dirname(absoluteChangelogPath), `${changelogFilename}-${version}${path_1.default.extname(changelogPath)}`);
-                    (0, changelog_1.extractVersionChangelog)(absoluteChangelogPath, version, versionChangelogPath);
+                    (0, changelog_1.extractVersionChangelog)(absoluteChangelogPath, version, versionChangelogPath, tagPrefix);
                     try {
                         const extractedContent = this.executor.readFile(versionChangelogPath);
                         core.info(`Created version-specific changelog at: ${versionChangelogPath}`);
@@ -30803,7 +30814,7 @@ class ReleaseManager {
             this.setupDuneReleaseConfig(duneConfig);
             this.cloneOpamRepository(duneConfig.local, opamRepository);
             core.startGroup('Distributing release archive');
-            const distribArgs = ['-p', packages, '--skip-tests', '--skip-lint'];
+            const distribArgs = ['-p', packages, '--skip-tests', '--skip-lint', ...tagArgs];
             if (includeSubmodules) {
                 distribArgs.push('--include-submodules');
             }
@@ -30812,7 +30823,6 @@ class ReleaseManager {
             }
             this.runDuneRelease('distrib', distribArgs);
             core.endGroup();
-            const tagName = this.context.ref.replace('refs/tags/', '');
             const githubReleaseUrl = draft
                 ? `https://github.com/${this.context.repository}/releases`
                 : `https://github.com/${this.context.repository}/releases/tag/${tagName}`;
@@ -30828,7 +30838,7 @@ class ReleaseManager {
                     process.env.DUNE_RELEASE_DELEGATE = 'github-dune-release';
                     process.env.GITHUB_TOKEN = this.context.token;
                     this.info('Setting GITHUB_TOKEN environment variable for dune-release');
-                    const publishArgs = ['--yes'];
+                    const publishArgs = ['--yes', ...tagArgs];
                     if (changelogPath) {
                         publishArgs.push(`--change-log=${changelogPath}`);
                     }
@@ -30859,7 +30869,7 @@ class ReleaseManager {
                 core.endGroup();
             }
             core.startGroup(`Packaging opam release for ${packages}`);
-            const opamPkgArgs = ['pkg', '-p', packages, '--yes'];
+            const opamPkgArgs = ['pkg', '-p', packages, '--yes', ...tagArgs];
             if (changelogPath) {
                 opamPkgArgs.push(`--change-log=${changelogPath}`);
             }
@@ -30884,7 +30894,7 @@ class ReleaseManager {
                     process.env.GITHUB_TOKEN = this.context.token;
                     this.info('Setting GITHUB_TOKEN environment variable for dune-release');
                     this.executor.chdir(this.context.workspace);
-                    const opamSubmitArgs = ['submit', '-p', packages, '--yes'];
+                    const opamSubmitArgs = ['submit', '-p', packages, '--yes', ...tagArgs];
                     if (changelogPath) {
                         opamSubmitArgs.push(`--change-log=${changelogPath}`);
                     }
@@ -31099,16 +31109,17 @@ const parseInput = () => {
     const preamble = core.getInput('pr-preamble-message') || undefined;
     const dryRun = core.getInput('dry-run') === 'true';
     const draft = core.getInput('draft') === 'true';
+    const tagPrefix = core.getInput('tag-prefix');
     const [opamOwner, opamRepo] = opamRepositoryInput.split('/');
     if (!opamOwner || !opamRepo) {
         throw new Error(`Invalid opam-repository format: ${opamRepositoryInput}. Expected: owner/repo`);
     }
     const opamRepository = { owner: opamOwner, repo: opamRepo };
-    return { packages, verbose, changelogPath, token, toOpamRepository, toGithubReleases, includeSubmodules, opamRepository, buildDir, publishMessage, preamble, dryRun, draft };
+    return { packages, verbose, changelogPath, token, toOpamRepository, toGithubReleases, includeSubmodules, opamRepository, buildDir, publishMessage, preamble, dryRun, draft, tagPrefix };
 };
 async function main() {
     try {
-        const { packages, verbose, changelogPath, token, toOpamRepository, toGithubReleases, includeSubmodules, opamRepository, buildDir, publishMessage, preamble, dryRun, draft } = parseInput();
+        const { packages, verbose, changelogPath, token, toOpamRepository, toGithubReleases, includeSubmodules, opamRepository, buildDir, publishMessage, preamble, dryRun, draft, tagPrefix } = parseInput();
         const testRefOverride = process.env.TEST_OVERRIDE_GITHUB_REF || '';
         const ref = testRefOverride || process.env.GITHUB_REF || github.context.ref;
         if (!ref.startsWith('refs/tags/')) {
@@ -31159,6 +31170,8 @@ async function main() {
             core.info(`Include submodules: ${includeSubmodules}`);
             core.info(`Dry run: ${dryRun}`);
             core.info(`Draft: ${draft}`);
+            if (tagPrefix)
+                core.info(`Tag prefix: ${tagPrefix}`);
             if (buildDir)
                 core.info(`Build directory: ${buildDir}`);
             if (publishMessage)
@@ -31168,7 +31181,7 @@ async function main() {
             core.info('================================');
         }
         const releaseManager = new core_1.ReleaseManager(context, verbose);
-        await releaseManager.runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository, includeSubmodules, opamRepository, buildDir, publishMessage, preamble, dryRun, draft);
+        await releaseManager.runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository, includeSubmodules, opamRepository, buildDir, publishMessage, preamble, dryRun, draft, tagPrefix);
         core.setOutput('release-status', 'success');
     }
     catch (error) {

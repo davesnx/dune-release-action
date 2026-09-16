@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `tag-prefix` input to release from tags like `mypkg.1.2.0`: the prefix is stripped for the package version and changelog lookup, and the full tag is passed to dune-release via `--tag`/`--pkg-version` [@pedrobslisboa](https://github.com/pedrobslisboa)
 - Run `dune-release` directly when it's on PATH, falling back to `dune tools exec` when `dune.lock` is present and then to `opam exec`, which is now the only case where `opam` is required [#7](https://github.com/davesnx/dune-release-action/issues/7) [@davesnx](https://github.com/davesnx)
 
 ## v0.5.0
