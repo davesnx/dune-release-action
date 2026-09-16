@@ -13,7 +13,9 @@ There are two public actions:
 
 ### GitHub Setup For Releases
 
-1. **opam-repository fork**: The action forks [ocaml/opam-repository](https://github.com/ocaml/opam-repository) into your account with the token below, the first time it submits a release. If you'd rather do it yourself, fork it by hand at https://github.com/ocaml/opam-repository/fork.
+1. **Fork opam-repository**: You need a fork of [ocaml/opam-repository](https://github.com/ocaml/opam-repository) in your GitHub account
+   - Go to https://github.com/ocaml/opam-repository/fork
+   - Create a fork (use default settings)
 
 2. **GitHub Token**: Create a [Personal Access Token (classic)](https://github.com/settings/tokens) with these scopes:
    - ✅ `repo` - Full control of repositories

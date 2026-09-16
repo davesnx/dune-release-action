@@ -2,7 +2,7 @@
 
 import * as core from '@actions/core';
 import * as github from '@actions/github';
-import { GitHubContext, OpamRepository, ReleaseConfig, ReleaseManager, ensureOpamRepositoryFork, parsePackagesInput } from './core';
+import { GitHubContext, OpamRepository, ReleaseConfig, ReleaseManager, parsePackagesInput } from './core';
 
 export const DEFAULT_CHANGELOG_PATH = './CHANGES.md';
 
@@ -116,11 +116,6 @@ async function main() {
       if (preamble) core.info(`Opam PR preamble: ${preamble}`);
       core.info('================================');
     }
-    // Before the release runs, so a fork failure can't leave a half-published GitHub release behind.
-    if (toOpamRepository && !dryRun && !draft) {
-      await ensureOpamRepositoryFork(octokit, opamRepository, effectiveUser);
-    }
-
     const releaseManager = new ReleaseManager(context, verbose);
     await releaseManager.runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository, includeSubmodules, opamRepository, buildDir, publishMessage, preamble, dryRun, draft);
 

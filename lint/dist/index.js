@@ -30448,7 +30448,6 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.ReleaseManager = exports.defaultExecutor = void 0;
 exports.shellQuote = shellQuote;
 exports.composeOpamPrMessage = composeOpamPrMessage;
-exports.ensureOpamRepositoryFork = ensureOpamRepositoryFork;
 exports.parsePackagesInput = parsePackagesInput;
 const core = __importStar(__nccwpck_require__(7484));
 const child_process_1 = __nccwpck_require__(5317);
@@ -30495,60 +30494,6 @@ function shellQuote(value) {
 function composeOpamPrMessage(preamble, changelog) {
     const changes = changelog?.trim();
     return changes ? `${preamble.trim()}\n\n${changes}` : preamble.trim();
-}
-/**
- * A PR to opam-repository needs a fork to push its branch to, and `dune-release
- * opam submit` never creates one itself, so fork it if `forkOwner` doesn't have one.
- */
-async function ensureOpamRepositoryFork(octokit, opamRepository, forkOwner, sleep = ms => new Promise(resolve => setTimeout(resolve, ms))) {
-    core.startGroup('Ensuring opam-repository fork');
-    const upstream = `${opamRepository.owner}/${opamRepository.repo}`;
-    const forkName = `${forkOwner}/${opamRepository.repo}`;
-    try {
-        let defaultBranch;
-        try {
-            const { data } = await octokit.rest.repos.get({ owner: forkOwner, repo: opamRepository.repo });
-            if (!data.fork || data.parent?.full_name !== upstream) {
-                throw new Error(`${forkName} exists but is not a fork of ${upstream}, so the action cannot push the release branch there`);
-            }
-            core.info(`Fork ${forkName} already exists`);
-            return;
-        }
-        catch (error) {
-            if (error.status !== 404) {
-                throw error;
-            }
-            core.info(`Fork ${forkName} not found, forking ${upstream}`);
-            const { data } = await octokit.rest.repos.createFork({ owner: opamRepository.owner, repo: opamRepository.repo });
-            defaultBranch = data.default_branch;
-        }
-        // Forking creates the repo record immediately but copies git objects (including
-        // branches) asynchronously, so poll for the branch rather than the repo itself.
-        for (let attempt = 0; attempt < 30; attempt++) {
-            await sleep(10_000);
-            try {
-                await octokit.rest.repos.getBranch({ owner: forkOwner, repo: opamRepository.repo, branch: defaultBranch });
-                core.info(`Fork ${forkName} is ready`);
-                return;
-            }
-            catch (error) {
-                if (error.status !== 404) {
-                    throw error;
-                }
-            }
-        }
-        throw new Error(`Timed out waiting for the fork ${forkName} to become available`);
-    }
-    catch (error) {
-        const message = error.message || error.toString();
-        throw new Error(`Could not fork ${upstream}: ${message}. ` +
-            `Fork it manually at https://github.com/${upstream}/fork, or grant the token 'repo' scope (classic) or ` +
-            `'Administration: write' + 'Contents: read' (fine-grained). Note: the default GITHUB_TOKEN can never fork ` +
-            `another repository, so a personal access token (GH_TOKEN) is required.`);
-    }
-    finally {
-        core.endGroup();
-    }
 }
 function parsePackagesInput(packagesInput) {
     const normalizedInput = packagesInput.trim();

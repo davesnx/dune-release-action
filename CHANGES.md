@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Automatically fork `opam-repository` (or the repository set via `opam-repository`) into the token's account before submitting a release, instead of requiring a manual fork beforehand [#7](https://github.com/davesnx/dune-release-action/issues/7) [@davesnx](https://github.com/davesnx)
+- Use the repository name from the `opam-repository` input for the fork's `--remote-repo` and PR URL instead of the hardcoded `opam-repository` [#7](https://github.com/davesnx/dune-release-action/issues/7) [@davesnx](https://github.com/davesnx)
 
 ## v0.5.0
 
