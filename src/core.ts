@@ -81,8 +81,9 @@ export function composeOpamPrMessage(preamble: string, changelog: string | null)
 export interface ForkOctokit {
   rest: {
     repos: {
-      get(params: { owner: string; repo: string }): Promise<unknown>;
-      createFork(params: { owner: string; repo: string }): Promise<unknown>;
+      get(params: { owner: string; repo: string }): Promise<{ data: { fork: boolean; parent?: { full_name: string } } }>;
+      createFork(params: { owner: string; repo: string }): Promise<{ data: { default_branch: string } }>;
+      getBranch(params: { owner: string; repo: string; branch: string }): Promise<unknown>;
     };
   };
 }
@@ -98,31 +99,48 @@ export async function ensureOpamRepositoryFork(
   sleep: (ms: number) => Promise<void> = ms => new Promise(resolve => setTimeout(resolve, ms))
 ): Promise<void> {
   core.startGroup('Ensuring opam-repository fork');
-  const exists = () => octokit.rest.repos.get({ owner: forkOwner, repo: opamRepository.repo }).then(() => true, () => false);
+  const upstream = `${opamRepository.owner}/${opamRepository.repo}`;
+  const forkName = `${forkOwner}/${opamRepository.repo}`;
   try {
-    if (await exists()) {
-      core.info(`Fork ${forkOwner}/${opamRepository.repo} already exists`);
+    let defaultBranch: string;
+    try {
+      const { data } = await octokit.rest.repos.get({ owner: forkOwner, repo: opamRepository.repo });
+      if (!data.fork || data.parent?.full_name !== upstream) {
+        throw new Error(`${forkName} exists but is not a fork of ${upstream}, so the action cannot push the release branch there`);
+      }
+      core.info(`Fork ${forkName} already exists`);
       return;
+    } catch (error: any) {
+      if (error.status !== 404) {
+        throw error;
+      }
+      core.info(`Fork ${forkName} not found, forking ${upstream}`);
+      const { data } = await octokit.rest.repos.createFork({ owner: opamRepository.owner, repo: opamRepository.repo });
+      defaultBranch = data.default_branch;
     }
 
-    core.info(`Fork ${forkOwner}/${opamRepository.repo} not found, forking ${opamRepository.owner}/${opamRepository.repo}`);
-    await octokit.rest.repos.createFork({ owner: opamRepository.owner, repo: opamRepository.repo });
-
-    // Forking is asynchronous; GitHub's docs say to contact support if it isn't ready after 5 minutes.
+    // Forking creates the repo record immediately but copies git objects (including
+    // branches) asynchronously, so poll for the branch rather than the repo itself.
     for (let attempt = 0; attempt < 30; attempt++) {
       await sleep(10_000);
-      if (await exists()) {
-        core.info(`Fork ${forkOwner}/${opamRepository.repo} is ready`);
+      try {
+        await octokit.rest.repos.getBranch({ owner: forkOwner, repo: opamRepository.repo, branch: defaultBranch });
+        core.info(`Fork ${forkName} is ready`);
         return;
+      } catch (error: any) {
+        if (error.status !== 404) {
+          throw error;
+        }
       }
     }
-    throw new Error(`Timed out waiting for the fork ${forkOwner}/${opamRepository.repo} to become available`);
+    throw new Error(`Timed out waiting for the fork ${forkName} to become available`);
   } catch (error: any) {
     const message = error.message || error.toString();
     throw new Error(
-      `Could not fork ${opamRepository.owner}/${opamRepository.repo}: ${message}. ` +
-      `Fork it manually at https://github.com/${opamRepository.owner}/${opamRepository.repo}/fork, or grant the token ` +
-      `'repo' scope (classic) or 'Administration: write' + 'Contents: read' (fine-grained).`
+      `Could not fork ${upstream}: ${message}. ` +
+      `Fork it manually at https://github.com/${upstream}/fork, or grant the token 'repo' scope (classic) or ` +
+      `'Administration: write' + 'Contents: read' (fine-grained). Note: the default GITHUB_TOKEN can never fork ` +
+      `another repository, so a personal access token (GH_TOKEN) is required.`
     );
   } finally {
     core.endGroup();

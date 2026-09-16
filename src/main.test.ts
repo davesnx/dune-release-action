@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import { ReleaseManager, GitHubContext, ReleaseConfig, Executor, ForkOctokit, ensureOpamRepositoryFork, parsePackagesInput, shellQuote, composeOpamPrMessage } from './core';
 import Fs from 'fs';
 import Path from 'path';
+import OS from 'os';
 import { DEFAULT_CHANGELOG_PATH } from './main';
 
 // Mock executor for testing
@@ -373,19 +374,42 @@ describe('URL construction', () => {
     assert.strictEqual(url, 'https://github.com/davesnx/dune-release-action/releases/tag/v1.0.0');
   });
 
-  test('constructs opam PR URL correctly', () => {
-    const opamRepository = { owner: 'ocaml', repo: 'opam-repository' };
-    const effectiveUser = 'davesnx';
-    const packages = 'my-package';
-    const version = 'v1.0.0';
-    const opamBranch = `release-${packages.replace(/,/g, '-')}-${version}`;
+  test('uses the configured opam-repository fork name, not a hardcoded one', async () => {
+    // @actions/core.setOutput writes to the file at GITHUB_OUTPUT when it's set, so point it
+    // at a throwaway file to observe the opam-pr-url output.
+    const outputFile = Path.join(OS.tmpdir(), `dune-release-action-test-output-${process.pid}-${Date.now()}`);
+    Fs.writeFileSync(outputFile, '');
+    const previousGithubOutput = process.env.GITHUB_OUTPUT;
+    process.env.GITHUB_OUTPUT = outputFile;
 
-    const url = `https://github.com/${opamRepository.owner}/${opamRepository.repo}/compare/master...${effectiveUser}:opam-repository:${opamBranch}`;
+    try {
+      const mockExecutor = createMockExecutor({
+        execResults: new Map([
+          ['opam --version', '2.1.0'],
+          ['dune-release --version', '2.0.0'],
+        ])
+      });
+      const manager = new ReleaseManager(createTestContext(), false, mockExecutor);
+      const config = createTestConfig({ user: 'testuser' });
 
-    assert.strictEqual(
-      url,
-      'https://github.com/ocaml/opam-repository/compare/master...davesnx:opam-repository:release-my-package-v1.0.0'
-    );
+      await manager.runRelease('pkg', null, config, true, true, false, { owner: 'someorg', repo: 'my-fork-name' });
+
+      const submitCommand = mockExecutor.commands.find(c => c.startsWith('opam exec -- dune-release opam submit '));
+      assert.ok(submitCommand, `no opam submit command was run: ${mockExecutor.commands}`);
+      assert.ok(submitCommand.includes('--remote-repo=git@github.com:testuser/my-fork-name'), submitCommand);
+      assert.ok(submitCommand.includes('--opam-repo=someorg/my-fork-name'), submitCommand);
+
+      const outputs = Fs.readFileSync(outputFile, 'utf-8');
+      assert.ok(outputs.includes('opam-pr-url'), outputs);
+      assert.ok(outputs.includes('testuser:my-fork-name:'), outputs);
+    } finally {
+      if (previousGithubOutput === undefined) {
+        delete process.env.GITHUB_OUTPUT;
+      } else {
+        process.env.GITHUB_OUTPUT = previousGithubOutput;
+      }
+      Fs.unlinkSync(outputFile);
+    }
   });
 
   test('handles multi-package opam branch name', () => {
@@ -608,27 +632,48 @@ describe('Opam repository input parsing', () => {
 // Opam Repository Fork Tests
 // ============================================================================
 
-function createMockForkOctokit(overrides: { getSucceedsAfter?: number; createForkError?: Error } = {}): ForkOctokit & { createForkCalls: number } {
-  const getSucceedsAfter = overrides.getSucceedsAfter ?? 0;
-  let getCalls = 0;
+function notFound(): Error {
+  return Object.assign(new Error('Not Found'), { status: 404 });
+}
+
+function createMockForkOctokit(overrides: {
+  getResult?: 'missing' | 'exists' | 'not-a-fork' | Error;
+  branchSucceedsAfter?: number;
+  createForkError?: Error;
+} = {}): ForkOctokit & { createForkCalls: number; getBranchCalls: number } {
+  const getResult = overrides.getResult ?? 'missing';
+  const branchSucceedsAfter = overrides.branchSucceedsAfter ?? 0;
 
   const mock = {
     createForkCalls: 0,
+    getBranchCalls: 0,
     rest: {
       repos: {
-        async get(_params: { owner: string; repo: string }): Promise<unknown> {
-          getCalls += 1;
-          if (getCalls > getSucceedsAfter) {
-            return {};
+        async get(_params: { owner: string; repo: string }) {
+          if (getResult instanceof Error) {
+            throw getResult;
           }
-          throw new Error('Not Found');
+          if (getResult === 'missing') {
+            throw notFound();
+          }
+          if (getResult === 'not-a-fork') {
+            return { data: { fork: false } };
+          }
+          return { data: { fork: true, parent: { full_name: 'ocaml/opam-repository' } } };
         },
-        async createFork(_params: { owner: string; repo: string }): Promise<unknown> {
+        async createFork(_params: { owner: string; repo: string }) {
           mock.createForkCalls += 1;
           if (overrides.createForkError) {
             throw overrides.createForkError;
           }
-          return {};
+          return { data: { default_branch: 'master' } };
+        },
+        async getBranch(_params: { owner: string; repo: string; branch: string }): Promise<unknown> {
+          mock.getBranchCalls += 1;
+          if (mock.getBranchCalls > branchSucceedsAfter) {
+            return {};
+          }
+          throw notFound();
         }
       }
     }
@@ -641,15 +686,15 @@ const noSleep = async (_ms: number): Promise<void> => {};
 
 describe('Opam repository fork', () => {
   test('does nothing when the fork already exists', async () => {
-    const octokit = createMockForkOctokit({ getSucceedsAfter: 0 });
+    const octokit = createMockForkOctokit({ getResult: 'exists' });
 
     await ensureOpamRepositoryFork(octokit, { owner: 'ocaml', repo: 'opam-repository' }, 'testuser', noSleep);
 
     assert.strictEqual(octokit.createForkCalls, 0);
   });
 
-  test('creates the fork and waits until it appears', async () => {
-    const octokit = createMockForkOctokit({ getSucceedsAfter: 3 });
+  test('creates the fork and waits until the default branch appears', async () => {
+    const octokit = createMockForkOctokit({ branchSucceedsAfter: 3 });
     let sleepCalls = 0;
 
     await ensureOpamRepositoryFork(octokit, { owner: 'ocaml', repo: 'opam-repository' }, 'testuser', async () => {
@@ -661,7 +706,7 @@ describe('Opam repository fork', () => {
   });
 
   test('fails with a manual-fork fallback when fork creation fails', async () => {
-    const octokit = createMockForkOctokit({ getSucceedsAfter: 1, createForkError: new Error('Resource not accessible by integration') });
+    const octokit = createMockForkOctokit({ createForkError: new Error('Resource not accessible by integration') });
 
     await assert.rejects(
       () => ensureOpamRepositoryFork(octokit, { owner: 'ocaml', repo: 'opam-repository' }, 'testuser', noSleep),
@@ -671,6 +716,36 @@ describe('Opam repository fork', () => {
         return true;
       }
     );
+  });
+
+  test('rejects when forkOwner already has a repo that is not a fork of the target', async () => {
+    const octokit = createMockForkOctokit({ getResult: 'not-a-fork' });
+
+    await assert.rejects(
+      () => ensureOpamRepositoryFork(octokit, { owner: 'ocaml', repo: 'opam-repository' }, 'testuser', noSleep),
+      /testuser\/opam-repository exists but is not a fork of ocaml\/opam-repository/
+    );
+    assert.strictEqual(octokit.createForkCalls, 0);
+  });
+
+  test('rethrows a non-404 error from repos.get without attempting to fork', async () => {
+    const octokit = createMockForkOctokit({ getResult: Object.assign(new Error('rate limited'), { status: 403 }) });
+
+    await assert.rejects(
+      () => ensureOpamRepositoryFork(octokit, { owner: 'ocaml', repo: 'opam-repository' }, 'testuser', noSleep),
+      /rate limited/
+    );
+    assert.strictEqual(octokit.createForkCalls, 0);
+  });
+
+  test('fails with a timeout message when the default branch never appears', async () => {
+    const octokit = createMockForkOctokit({ branchSucceedsAfter: Infinity });
+
+    await assert.rejects(
+      () => ensureOpamRepositoryFork(octokit, { owner: 'ocaml', repo: 'opam-repository' }, 'testuser', noSleep),
+      /Timed out waiting for the fork testuser\/opam-repository to become available/
+    );
+    assert.strictEqual(octokit.createForkCalls, 1);
   });
 });
 
