@@ -201,7 +201,7 @@ on:
     tag-prefix: 'mypkg.'
 ```
 
-The prefix is removed for the package version, the changelog lookup and the `version` output, while the full tag is passed to `dune-release` through `--tag` and `--pkg-version`. Changelog headers can be written either way: `## mypkg.1.2.0` and `## 1.2.0` both match. The action fails early if the tag does not start with the configured prefix.
+The prefix is removed to get the package version and the `version` output, and the full tag is passed to `dune-release` through `--tag` and `--pkg-version`. Changelog headers may carry the prefix or not: `## mypkg.1.2.0` and `## 1.2.0` both match version `1.2.0`. The action fails early if the tag does not start with the configured prefix.
 
 ## Lint Action Inputs
 
