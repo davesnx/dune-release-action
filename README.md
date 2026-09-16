@@ -24,7 +24,7 @@ There are two public actions:
 
 ### Build Tools
 
-Both actions need `dune-release` and detect how to run it. If the project has a `dune.lock` directory (dune package management), they run `dune tools exec dune-release`. Otherwise they run `opam exec -- dune-release`, which needs an opam switch with `dune-release` installed. To override this detection, put `dune-release` on `$PATH`: when it is found there, it runs directly.
+Both actions need `dune-release` and detect how to run it, based on an `_opam` folder or a `dune.lock` folder.
 
 The actions do not install anything for you. That stays in your workflow so you keep control over the OCaml switch, caching, and setup policy.
 
@@ -35,12 +35,6 @@ With opam:
     ocaml-compiler: 5.3.0
 
 - run: opam install dune-release -y
-```
-
-With [dune package management](https://dune.readthedocs.io/en/stable/tutorials/dune-package-management/index.html), nothing else is needed: `dune tools exec` locks and builds `dune-release` on first use, which can take a while. To pre-install it, or to put it on `$PATH` yourself:
-```yaml
-- run: dune tools install dune-release
-- run: realpath "$(dirname "$(dune tools which dune-release)")" >> "$GITHUB_PATH"
 ```
 
 ## Usage
