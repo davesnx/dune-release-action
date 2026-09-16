@@ -89,6 +89,30 @@ function createMockExecutor(overrides: Partial<{
   return mock;
 }
 
+// createMockExecutor matches commands with command.includes(pattern), which can't fail
+// one candidate without also failing another that contains it as a substring (e.g.
+// 'opam exec -- dune-release --version' contains 'dune-release --version'), so
+// dependency-resolution tests match commands exactly instead. `commands` is passed in
+// so a throwing call still leaves the caller with everything recorded up to the failure.
+function createExactMatchExecutor(opts: { failing: string[]; duneLock?: boolean }, commands: string[] = []): Executor {
+  return {
+    exec(command: string): string {
+      commands.push(command);
+      if (opts.failing.includes(command)) {
+        throw new Error(`command failed: ${command}`);
+      }
+      return '';
+    },
+    fileExists: (path: string) => Boolean(opts.duneLock) && path === '/workspace/dune.lock',
+    readFile: () => '',
+    writeFile: () => {},
+    mkdirSync: () => {},
+    unlinkSync: () => {},
+    chdir: () => {},
+    cwd: () => '/workspace'
+  };
+}
+
 function createTestContext(overrides: Partial<GitHubContext> = {}): GitHubContext {
   return {
     ref: 'refs/tags/v1.0.0',
@@ -532,30 +556,12 @@ describe('Lint mode', () => {
     );
   });
 
-  // createMockExecutor matches commands with command.includes(pattern), which can't fail
-  // one candidate without also failing another that contains it as a substring (e.g.
-  // 'opam exec -- dune-release --version' contains 'dune-release --version'), so these
-  // dependency-resolution tests match commands exactly instead. `commands` is passed in
-  // so a throwing call still leaves the caller with everything recorded up to the failure.
   function runLintWith(opts: { failing: string[]; duneLock?: boolean }, commands: string[] = []): string[] {
-    const executor: Executor = {
-      exec(command: string): string {
-        commands.push(command);
-        if (opts.failing.includes(command)) {
-          throw new Error(`command failed: ${command}`);
-        }
-        return '';
-      },
-      fileExists: (path: string) => Boolean(opts.duneLock) && path === '/workspace/dune.lock',
-      readFile: () => '',
-      writeFile: () => {},
-      mkdirSync: () => {},
-      unlinkSync: () => {},
-      chdir: () => {},
-      cwd: () => '/workspace'
-    };
-
-    new ReleaseManager(createTestContext({ ref: 'refs/heads/main', token: '' }), false, executor).runLint('pkg');
+    new ReleaseManager(
+      createTestContext({ ref: 'refs/heads/main', token: '' }),
+      false,
+      createExactMatchExecutor(opts, commands)
+    ).runLint('pkg');
     return commands;
   }
 
@@ -604,6 +610,20 @@ describe('Lint mode', () => {
       'dune-release --version',
       'opam exec -- dune-release --version'
     ]);
+  });
+
+  test('carries the fallback prefix into distrib, publish, opam pkg, and opam submit', async () => {
+    const commands: string[] = [];
+    const executor = createExactMatchExecutor({ failing: ['dune-release --version'] }, commands);
+    const manager = new ReleaseManager(createTestContext(), false, executor);
+
+    await manager.runRelease('pkg', null, createTestConfig(), true, true);
+
+    const subcommands = commands.filter(c => c.includes('dune-release') && !c.endsWith('--version'));
+    assert.ok(subcommands.length >= 4, `expected dune-release subcommands to run, got: ${commands}`);
+    for (const command of subcommands) {
+      assert.ok(command.startsWith('opam exec -- dune-release '), `unexpected prefix: ${command}`);
+    }
   });
 });
 

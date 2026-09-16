@@ -24,7 +24,7 @@ There are two public actions:
 
 ### Build Tools
 
-Both actions need `dune-release` and detect how to run it. If the project has a `dune.lock` directory (dune package management), they run `dune tools exec dune-release`. Otherwise they run `opam exec -- dune-release`, which needs only the `opam` binary, not an opam switch. To override this detection, put `dune-release` on `$PATH`: when it is found there, it runs directly.
+Both actions need `dune-release` and detect how to run it. If the project has a `dune.lock` directory (dune package management), they run `dune tools exec dune-release`. Otherwise they run `opam exec -- dune-release`, which needs an opam switch with `dune-release` installed. To override this detection, put `dune-release` on `$PATH`: when it is found there, it runs directly.
 
 The actions do not install anything for you. That stays in your workflow so you keep control over the OCaml switch, caching, and setup policy.
 

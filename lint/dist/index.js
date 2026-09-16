@@ -30587,7 +30587,7 @@ class ReleaseManager {
         ];
         for (const prefix of candidates) {
             try {
-                const version = this.exec(`${prefix} --version`, { silent: true });
+                const version = this.executor.exec(`${prefix} --version`, { silent: true });
                 this.info(`✓ using "${prefix}": ${version}`);
                 this.duneReleasePrefix = prefix;
                 core.endGroup();
