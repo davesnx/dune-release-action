@@ -214,10 +214,17 @@ Your `CHANGES.md` should follow this format:
 
 #### Supported Formats
 
+The version header must use the same version string as the git tag and must contain a digit. A leading `v` is optional in both places.
+
 - `## v1.0.0` - With 'v' prefix
 - `## 1.0.0` - Without prefix
 - `## 1.0.0 (2025-10-13)` - With date
 - `## 1.0.0-beta.1` - Pre-release versions
+- `## 2024.09.22`, `## jsonkit.1.2.0` - Any other version that opam accepts
+
+### Tag Format
+
+Any tag that opam accepts as a package version is accepted: letters, digits, and `_ + . ~ -`. A tag with any other character, such as `release/1.0`, fails before dune-release runs. A leading `v` before a digit is dropped for the opam version, so the tag `v1.2.0` releases version `1.2.0`, and the tag `jsonkit.1.2.0` releases version `jsonkit.1.2.0`. The action passes `--tag` and `--pkg-version` to dune-release, so dune-release never derives them from `CHANGES.md`. Git does not allow `~` in tag names, so a version such as `1.0~beta1` cannot be released from a tag.
 
 ## Outputs
 

@@ -1,5 +1,9 @@
 # Changelog
 
+# Unreleased
+
+- Accept any git tag that is a valid opam version (letters, digits, `_ + . ~ -`), drop a leading `v` before a digit for the opam version, and pass `--tag` and `--pkg-version` to dune-release so it no longer derives them from `CHANGES.md`. Supersedes [#10](https://github.com/davesnx/dune-release-action/pull/10) [@davesnx](https://github.com/davesnx)
+
 ## v0.5.0
 
 - Add `draft` input to create the GitHub release as a draft, skipping the opam-repository PR, so the tarball can be inspected before publishing [#4](https://github.com/davesnx/dune-release-action/issues/4) [@davesnx](https://github.com/davesnx)
