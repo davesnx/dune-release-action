@@ -105,6 +105,7 @@ export class ReleaseManager {
   private verbose: boolean;
   private executor: Executor;
   private pkgVersion: string = '';
+  private duneReleasePrefix: string = 'dune-release';
 
   constructor(context: GitHubContext, verbose: boolean = false, executor: Executor = defaultExecutor) {
     this.context = context;
@@ -165,46 +166,36 @@ export class ReleaseManager {
   }
 
   /**
-   * Check if required tools are installed
+   * Try dune-release directly, then `dune tools exec` (if dune.lock exists), then `opam exec` - keeping the first that works.
+   * opam is only needed for that last fallback lookup, not by dune-release's own commands.
    */
   private checkDependencies(): void {
     core.startGroup('Checking dependencies');
 
-    const dependencies = [
-      { name: 'opam', command: 'opam --version' },
-      { name: 'dune-release', command: 'opam exec -- dune-release --version' }
+    const usesDunePkg = this.executor.fileExists(Path.join(this.context.workspace, 'dune.lock'));
+    const candidates = [
+      'dune-release',
+      ...(usesDunePkg ? ['dune tools exec dune-release --'] : []),
+      'opam exec -- dune-release'
     ];
 
-    const missing: string[] = [];
-
-    for (const dep of dependencies) {
+    for (const prefix of candidates) {
       try {
-        const version = this.exec(dep.command, { silent: true });
-        this.info(`✓ ${dep.name} is installed: ${version}`);
+        const version = this.executor.exec(`${prefix} --version`, { silent: true });
+        this.info(`✓ using "${prefix}": ${version}`);
+        this.duneReleasePrefix = prefix;
+        core.endGroup();
+        return;
       } catch (error: any) {
-        core.error(`✗ ${dep.name} is not installed or not accessible`);
-        missing.push(dep.name);
+        this.info(`"${prefix} --version" failed, trying the next option`);
       }
     }
 
     core.endGroup();
-
-    if (missing.length > 0) {
-      const errorMessage = `Missing required dependencies: ${missing.join(', ')}`;
-      core.error(errorMessage);
-      core.error('');
-      core.error('To fix this:');
-
-      if (missing.includes('opam')) {
-        core.error('Install opam: https://opam.ocaml.org/doc/Install.html');
-      }
-
-      if (missing.includes('dune-release')) {
-        core.error('Install dune-release: opam install dune-release');
-      }
-
-      throw new Error(errorMessage);
-    }
+    throw new Error(
+      'Missing required dependency: dune-release. Install it (opam install dune-release), ' +
+      'install it as a dune dev tool (dune tools install dune-release), or put dune-release or opam on PATH.'
+    );
   }
 
   /**
@@ -306,7 +297,7 @@ export class ReleaseManager {
    * Run dune-release commands
    */
   private runDuneRelease(command: string, args: string[] = []): void {
-    const fullCommand = `opam exec -- dune-release ${command} ${args.join(' ')}`;
+    const fullCommand = `${this.duneReleasePrefix} ${command} ${args.join(' ')}`;
     this.exec(fullCommand);
   }
 

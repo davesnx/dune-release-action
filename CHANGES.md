@@ -1,7 +1,8 @@
 # Changelog
 
-# Unreleased
+## Unreleased
 
+- Run `dune-release` directly when it's on PATH, falling back to `dune tools exec` when `dune.lock` is present and then to `opam exec`, which is now the only case where `opam` is required [#7](https://github.com/davesnx/dune-release-action/issues/7) [@davesnx](https://github.com/davesnx)
 - Accept any git tag that is a valid opam version (letters, digits, `_ + . ~ -`), drop a leading `v` before a digit for the opam version, and pass `--tag` and `--pkg-version` to dune-release so it no longer derives them from `CHANGES.md`. Supersedes [#10](https://github.com/davesnx/dune-release-action/pull/10) [@davesnx](https://github.com/davesnx)
 
 ## v0.5.0

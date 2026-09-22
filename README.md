@@ -24,13 +24,11 @@ There are two public actions:
 
 ### Build Tools
 
-Both actions expect these tools to be available in your GitHub Actions environment:
-- `opam` - OCaml package manager
-- `dune-release` - Release automation tool
+Both actions need `dune-release` and detect how to run it: directly when it is on `PATH`, with `dune tools exec` when the project has a `dune.lock` folder, otherwise with `opam exec`.
 
-The actions validate that these tools are available, but they do not install them for you. That stays in your workflow so you keep control over the OCaml switch, caching, and setup policy.
+The actions do not install anything for you. That stays in your workflow so you keep control over the OCaml switch, caching, and setup policy.
 
-Install with:
+With opam:
 ```yaml
 - uses: ocaml/setup-ocaml@v3
   with:
