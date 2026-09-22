@@ -649,11 +649,7 @@ describe('Error message detection', () => {
   });
 });
 
-// ============================================================================
-// Tag Validation Tests
-// ============================================================================
-
-describe('Tag validation', () => {
+describe('Opam version from tag', () => {
   function createReleaseExecutor() {
     return createMockExecutor({
       execResults: new Map([

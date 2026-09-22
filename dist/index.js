@@ -30415,13 +30415,12 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.OPAM_VERSION_CHARS = void 0;
 exports.dropLeadingV = dropLeadingV;
 exports.versionFromTag = versionFromTag;
-// opam's Version.of_string rule (ocaml/opam src/format/opamPackage.ml):
-// a package version is non-empty and contains only these characters.
+// opam's Version.of_string rule (ocaml/opam src/format/opamPackage.ml).
 exports.OPAM_VERSION_CHARS = /^[A-Za-z0-9_+.~-]+$/;
 const INVALID_CHAR = /[^A-Za-z0-9_+.~-]/;
-// dune-release drops a leading v/V unconditionally; this action only drops it
-// when a digit follows, so tags like "vendor-1.0" keep their leading v (dune-release
-// is then told the real tag separately via --pkg-version, so it does not re-drop it).
+// dune-release drops a leading v/V unconditionally; this action only drops it when a
+// digit follows, so tags like "vendor-1.0" keep their v. The result is passed with
+// --pkg-version, so dune-release's own rule never runs.
 function dropLeadingV(tag) {
     return /^[vV]\d/.test(tag) ? tag.slice(1) : tag;
 }

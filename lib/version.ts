@@ -1,11 +1,10 @@
-// opam's Version.of_string rule (ocaml/opam src/format/opamPackage.ml):
-// a package version is non-empty and contains only these characters.
+// opam's Version.of_string rule (ocaml/opam src/format/opamPackage.ml).
 export const OPAM_VERSION_CHARS = /^[A-Za-z0-9_+.~-]+$/;
 const INVALID_CHAR = /[^A-Za-z0-9_+.~-]/;
 
-// dune-release drops a leading v/V unconditionally; this action only drops it
-// when a digit follows, so tags like "vendor-1.0" keep their leading v (dune-release
-// is then told the real tag separately via --pkg-version, so it does not re-drop it).
+// dune-release drops a leading v/V unconditionally; this action only drops it when a
+// digit follows, so tags like "vendor-1.0" keep their v. The result is passed with
+// --pkg-version, so dune-release's own rule never runs.
 export function dropLeadingV(tag: string): string {
   return /^[vV]\d/.test(tag) ? tag.slice(1) : tag;
 }
