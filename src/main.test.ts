@@ -738,3 +738,46 @@ describe('Error message detection', () => {
     assert.ok(errorMessage2.includes('Invalid username or token'));
   });
 });
+
+describe('Opam version from tag', () => {
+  function createReleaseExecutor() {
+    return createMockExecutor({
+      execResults: new Map([
+        ['opam --version', '2.1.0'],
+        ['dune-release --version', '2.0.0'],
+      ])
+    });
+  }
+
+  async function runReleaseWithRef(ref: string): Promise<string[]> {
+    const mockExecutor = createReleaseExecutor();
+    const manager = new ReleaseManager(createTestContext({ ref }), false, mockExecutor);
+    await manager.runRelease('pkg', null, createTestConfig(), true, true, false, { owner: 'ocaml', repo: 'opam-repository' }, undefined, undefined, undefined, false, false);
+    return mockExecutor.commands;
+  }
+
+  test('passes the tag and the v-stripped opam version to every dune-release step', async () => {
+    const commands = await runReleaseWithRef('refs/tags/v1.2.0');
+    const steps = commands.filter(c => /dune-release (distrib|publish|opam)/.test(c));
+    assert.strictEqual(steps.length, 4, commands.join('\n'));
+    for (const command of steps) {
+      assert.ok(command.includes('--tag=v1.2.0'), command);
+      assert.ok(command.includes('--pkg-version=1.2.0'), command);
+    }
+  });
+
+  test('accepts any opam-valid tag verbatim', async () => {
+    const commands = await runReleaseWithRef('refs/tags/jsonkit.1.2.0');
+    assert.ok(commands.some(c => c.includes('--tag=jsonkit.1.2.0') && c.includes('--pkg-version=jsonkit.1.2.0')), commands.join('\n'));
+  });
+
+  test('rejects a tag opam would reject before running dune-release', async () => {
+    const mockExecutor = createReleaseExecutor();
+    const manager = new ReleaseManager(createTestContext({ ref: 'refs/tags/release/1.0' }), false, mockExecutor);
+    await assert.rejects(
+      manager.runRelease('pkg', null, createTestConfig(), true, true, false, { owner: 'ocaml', repo: 'opam-repository' }, undefined, undefined, undefined, true, false),
+      /Invalid character '\/' in package version "release\/1\.0"/
+    );
+    assert.ok(!mockExecutor.commands.some(c => c.includes('dune-release distrib')), mockExecutor.commands.join('\n'));
+  });
+});

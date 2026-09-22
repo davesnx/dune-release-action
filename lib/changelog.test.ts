@@ -260,6 +260,69 @@ This is a changelog for my project.
     assert.ok(entries[0].content.includes('Support for OCaml 5.4'));
   });
 
+  test('parses opam-valid version headers (prerelease, date, package-prefixed, build)', () => {
+    const testFile = createTestFile(`## 1.0~beta1
+- Prerelease
+
+## 2024.09.22
+- Date version
+
+## jsonkit.1.2.0
+- Package-prefixed version
+
+## 1.0+build (2024-01-01)
+- Build metadata
+`);
+    const entries = parseChangelog(testFile);
+    assert.strictEqual(entries.length, 4);
+    assert.strictEqual(entries[0].version, '1.0~beta1');
+    assert.ok(entries[0].content.includes('Prerelease'));
+    assert.strictEqual(entries[1].version, '2024.09.22');
+    assert.ok(entries[1].content.includes('Date version'));
+    assert.strictEqual(entries[2].version, 'jsonkit.1.2.0');
+    assert.ok(entries[2].content.includes('Package-prefixed version'));
+    assert.strictEqual(entries[3].version, '1.0+build');
+    assert.strictEqual(entries[3].date, '2024-01-01');
+    assert.ok(entries[3].content.includes('Build metadata'));
+  });
+
+  test('does not treat subsection or unreleased headers as versions', () => {
+    const testFile = createTestFile(`# Changelog
+
+## Unreleased
+
+### Added
+- New thing
+
+### Fixed
+- Fixed bug
+
+## 1.0.0
+
+### Added
+- Released thing
+
+### Fixed
+- Released fix
+`);
+    const entries = parseChangelog(testFile);
+    assert.strictEqual(entries.length, 2);
+
+    const unreleased = entries.find(e => e.version === 'unreleased');
+    assert.ok(unreleased);
+    assert.ok(unreleased.content.includes('### Added'));
+    assert.ok(unreleased.content.includes('New thing'));
+    assert.ok(unreleased.content.includes('### Fixed'));
+    assert.ok(unreleased.content.includes('Fixed bug'));
+
+    const version = entries.find(e => e.version === '1.0.0');
+    assert.ok(version);
+    assert.ok(version.content.includes('### Added'));
+    assert.ok(version.content.includes('Released thing'));
+    assert.ok(version.content.includes('### Fixed'));
+    assert.ok(version.content.includes('Released fix'));
+  });
+
   test('parses single hash version headers', () => {
     const testFile = createTestFile(`# 1.0.0
 - First stable release
@@ -378,6 +441,17 @@ describe('validateChangelog', () => {
 - Feature
 `);
     const validation = validateChangelog(testFile, 'v1.0.0');
+
+    assert.strictEqual(validation.valid, true);
+    assert.strictEqual(validation.hasVersionEntry, true);
+  });
+
+  test('validates a monorepo package-prefixed version', () => {
+    const testFile = createTestFile(`## jsonkit.1.2.0
+
+- Feature
+`);
+    const validation = validateChangelog(testFile, 'jsonkit.1.2.0');
 
     assert.strictEqual(validation.valid, true);
     assert.strictEqual(validation.hasVersionEntry, true);

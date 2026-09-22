@@ -4,6 +4,7 @@ import Fs from 'fs';
 import Path from 'path';
 import OS from 'os';
 import { validateChangelog, extractVersionChangelog } from '../lib/changelog';
+import { versionFromTag } from '../lib/version';
 
 export interface ReleaseConfig {
   user: string;
@@ -103,6 +104,7 @@ export class ReleaseManager {
   private context: GitHubContext;
   private verbose: boolean;
   private executor: Executor;
+  private pkgVersion: string = '';
   private duneReleasePrefix: string = 'dune-release';
 
   constructor(context: GitHubContext, verbose: boolean = false, executor: Executor = defaultExecutor) {
@@ -205,8 +207,9 @@ export class ReleaseManager {
       if (!tag || tag === this.context.ref) {
         throw new Error('No valid git tag found in ref');
       }
+      this.pkgVersion = versionFromTag(tag);
       core.setOutput('version', tag);
-      this.info(`Extracted version: ${tag}`);
+      this.info(`Extracted version: ${tag} (opam version ${this.pkgVersion})`);
       return tag;
     } catch (error: any) {
       core.error(`Failed to extract version from ref ${this.context.ref}: ${error.message}`);
@@ -444,7 +447,7 @@ export class ReleaseManager {
       this.cloneOpamRepository(duneConfig.local, opamRepository);
 
       core.startGroup('Distributing release archive');
-      const distribArgs = ['-p', packages, '--skip-tests', '--skip-lint'];
+      const distribArgs = ['-p', packages, '--skip-tests', '--skip-lint', `--tag=${version}`, `--pkg-version=${this.pkgVersion}`];
       if (includeSubmodules) {
         distribArgs.push('--include-submodules');
       }
@@ -470,7 +473,7 @@ export class ReleaseManager {
           process.env.DUNE_RELEASE_DELEGATE = 'github-dune-release';
           process.env.GITHUB_TOKEN = this.context.token;
           this.info('Setting GITHUB_TOKEN environment variable for dune-release');
-          const publishArgs = ['--yes'];
+          const publishArgs = ['--yes', `--tag=${version}`, `--pkg-version=${this.pkgVersion}`];
           if (changelogPath) {
             publishArgs.push(`--change-log=${changelogPath}`);
           }
@@ -500,7 +503,7 @@ export class ReleaseManager {
       }
 
       core.startGroup(`Packaging opam release for ${packages}`);
-      const opamPkgArgs = ['pkg', '-p', packages, '--yes'];
+      const opamPkgArgs = ['pkg', '-p', packages, '--yes', `--tag=${version}`, `--pkg-version=${this.pkgVersion}`];
       if (changelogPath) {
         opamPkgArgs.push(`--change-log=${changelogPath}`);
       }
@@ -526,7 +529,7 @@ export class ReleaseManager {
           process.env.GITHUB_TOKEN = this.context.token;
           this.info('Setting GITHUB_TOKEN environment variable for dune-release');
           this.executor.chdir(this.context.workspace);
-          const opamSubmitArgs = ['submit', '-p', packages, '--yes'];
+          const opamSubmitArgs = ['submit', '-p', packages, '--yes', `--tag=${version}`, `--pkg-version=${this.pkgVersion}`];
           if (changelogPath) {
             opamSubmitArgs.push(`--change-log=${changelogPath}`);
           }
