@@ -36,7 +36,7 @@ jobs:
           git config --global user.name "github-actions"
           git config --global user.email "actions@github.com"
           git init -q -b main .
-          printf 'action\n_build\n' > .gitignore
+          printf 'action\n_build\n_opam\n' > .gitignore
           echo '(dirs src)' > dune
           cat > dune-project <<'DUNE'
           (lang dune 3.0)
