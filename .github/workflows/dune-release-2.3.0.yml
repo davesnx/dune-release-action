@@ -1,0 +1,81 @@
+name: dune-release 2.3.0
+
+on:
+  push:
+    branches: [test-dune-release-2.3.0]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: action
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Build actions
+        working-directory: action
+        run: npm ci && npm run build
+
+      - uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: 5.3
+
+      - name: Install dune-release 2.3.0
+        run: |
+          opam pin add dune-release.2.3.0 git+https://github.com/tarides/dune-release.git#2.3.0 -y
+          opam exec -- dune-release --version
+          test "$(opam exec -- dune-release --version)" = "2.3.0"
+
+      - name: Create test project
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "actions@github.com"
+          git init -q -b main .
+          printf 'action\n_build\n' > .gitignore
+          echo '(dirs src)' > dune
+          cat > dune-project <<'DUNE'
+          (lang dune 3.0)
+          (name demo_pkg)
+          (generate_opam_files true)
+          (source (github davesnx/demo_pkg))
+          (license MIT)
+          (authors "Test Author")
+          (maintainers "Test Author")
+          (package
+           (name demo_pkg)
+           (synopsis "Demo package for dune-release")
+           (description "A tiny package used to test dune-release.")
+           (depends (ocaml (>= 4.14))))
+          DUNE
+          mkdir src
+          echo '(library (name demo_pkg) (public_name demo_pkg))' > src/dune
+          echo 'let hello = "hello"' > src/demo_pkg.ml
+          printf '# demo_pkg\n\nA demo.\n' > README.md
+          printf '## 0.1.0\n\n- Initial release\n' > CHANGES.md
+          printf 'MIT License\n\nCopyright (c) 2026 Test Author\n' > LICENSE
+          opam exec -- dune build
+          git add -A
+          git commit -qm "Initial commit"
+          git tag 0.1.0
+
+      - name: Lint
+        uses: ./action/lint
+        with:
+          packages: demo_pkg
+
+      - name: Release (dry run)
+        uses: ./action
+        env:
+          TEST_OVERRIDE_GITHUB_REF: refs/tags/0.1.0
+        with:
+          packages: demo_pkg
+          github-token: ${{ github.token }}
+          dry-run: true
+          to-opam-repository: false
+          to-github-releases: false
+          verbose: true
