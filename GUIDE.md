@@ -113,3 +113,29 @@ git push origin 1.2.0
 ```
 
 This triggers the release workflow since you pushed a new tag.
+
+### Prefixed tags
+
+If your tags carry a literal prefix, such as `mypkg.1.2.0`, set `tag-prefix` so the action knows where the version starts, and narrow the trigger glob to those tags:
+
+```yaml
+on:
+  push:
+    tags:
+      - 'mypkg.*'
+```
+
+```yaml
+- uses: davesnx/dune-release-action@v0.5.0
+  with:
+    packages: 'mypkg'
+    github-token: ${{ secrets.GH_TOKEN }}
+    tag-prefix: 'mypkg.'
+```
+
+```bash
+git tag -a "mypkg.1.2.0" -m "Release version 1.2.0"
+git push origin mypkg.1.2.0
+```
+
+The action strips the prefix for the package version (`1.2.0`), the changelog lookup and the `version` output, and passes the full tag to `dune-release` with `--tag` and `--pkg-version`. Changelog headers may be written either way: `## mypkg.1.2.0` and `## 1.2.0` both match.

@@ -125,6 +125,25 @@ jobs:
               to-github-releases: false
             expect-success: true
 
+          - name: "prefixed-tag"
+            description: "Test tag-prefix: tag pkg.0.1.0 releases version 0.1.0"
+            tag: pkg.0.1.0
+            setup: |
+              echo 'opam-version: "2.0"' > test-package.opam
+              echo 'name: "test-package"' >> test-package.opam
+              echo '## pkg.0.1.0 (2026-01-01)' > CHANGES.md
+              echo '- Prefixed release' >> CHANGES.md
+            inputs:
+              package-name: test-package
+              changelog: test-env/CHANGES.md
+              tag-prefix: pkg.
+              to-opam-repository: false
+              to-github-releases: false
+              verbose: true
+            expect-success: true
+            expect-outputs:
+              - version: "0.1.0"
+
     steps:
       - uses: actions/checkout@v6
 
@@ -154,7 +173,7 @@ jobs:
           # Create initial commit and tag (needed for release action)
           git add -A || true
           git commit -m "Initial test commit" || echo "No files to commit"
-          git tag 0.1.0
+          git tag "${{ matrix.scenario.tag || '0.1.0' }}"
 
           # Copy test files to repo root for the action to find
           cd ..
@@ -218,8 +237,9 @@ jobs:
           to-github-releases: ${{ matrix.scenario.inputs.to-github-releases }}
           changelog: ${{ matrix.scenario.inputs.changelog }}
           verbose: ${{ matrix.scenario.inputs.verbose }}
+          tag-prefix: ${{ matrix.scenario.inputs.tag-prefix }}
         env:
-          TEST_OVERRIDE_GITHUB_REF: refs/tags/0.1.0
+          TEST_OVERRIDE_GITHUB_REF: refs/tags/${{ matrix.scenario.tag || '0.1.0' }}
         continue-on-error: true
 
       - name: Validate outcome
@@ -244,9 +264,14 @@ jobs:
       - name: Validate outputs
         if: matrix.scenario.expect-outputs
         run: |
-          echo "Checking outputs..."
-          # Would check outputs here if they were set by the action
-          echo "✅ Output validation (placeholder)"
+          expected="${{ matrix.scenario.expect-outputs[0].version }}"
+          actual="${{ steps.test-action.outputs.version }}"
+          echo "version output: '$actual' (expected '$expected')"
+          if [[ "$actual" != "$expected" ]]; then
+            echo "❌ version output mismatch"
+            exit 1
+          fi
+          echo "✅ Output validation passed"
 
       - name: Check error message
         if: matrix.scenario.expect-error && steps.test-action.outcome == 'failure'

@@ -16,14 +16,26 @@ export interface ChangelogValidation {
   errors: string[];
 }
 
-const VERSION_PATTERN = /^#{1,3}\s+v?(\d+(?:\.\d+)*(?:-[a-zA-Z0-9.]+)?)\s*(?:\(([^)]+)\))?/;
 const TITLE_PATTERN = /^#\s+(Changelog|Changes)\s*$/i;
 
-export function parseChangelog(changelogPath: string): ChangelogEntry[] {
+/**
+ * Escape special regex characters in a string
+ */
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function versionPattern(prefix: string = ''): RegExp {
+  const optionalPrefix = prefix ? `(?:${escapeRegex(prefix)})?` : '';
+  return new RegExp(`^#{1,3}\\s+${optionalPrefix}v?(\\d+(?:\\.\\d+)*(?:-[a-zA-Z0-9.]+)?)\\s*(?:\\(([^)]+)\\))?`);
+}
+
+export function parseChangelog(changelogPath: string, prefix: string = ''): ChangelogEntry[] {
   try {
     const content = Fs.readFileSync(changelogPath, 'utf-8');
     const entries: ChangelogEntry[] = [];
     const lines = content.split('\n');
+    const pattern = versionPattern(prefix);
 
     let currentEntry: ChangelogEntry | null = null;
     let currentContent: string[] = [];
@@ -31,7 +43,7 @@ export function parseChangelog(changelogPath: string): ChangelogEntry[] {
     let unreleasedContent: string[] = [];
 
     for (const line of lines) {
-      const versionMatch = line.match(VERSION_PATTERN);
+      const versionMatch = line.match(pattern);
 
       if (versionMatch) {
         if (!foundFirstVersion && unreleasedContent.length > 0) {
@@ -82,7 +94,8 @@ function versionsMatch(a: string, b: string): boolean {
 
 export function validateChangelog(
   changelogPath: string,
-  expectedVersion: string
+  expectedVersion: string,
+  prefix: string = ''
 ): ChangelogValidation {
   const validation: ChangelogValidation = {
     valid: true,
@@ -99,7 +112,7 @@ export function validateChangelog(
       return validation;
     }
 
-    const entries = parseChangelog(changelogPath);
+    const entries = parseChangelog(changelogPath, prefix);
 
     if (entries.length === 0) {
       validation.valid = false;
@@ -160,10 +173,11 @@ export function validateChangelog(
 export function extractVersionChangelog(
   changelogPath: string,
   version: string,
-  outputPath: string
+  outputPath: string,
+  prefix: string = ''
 ): void {
   try {
-    const entries = parseChangelog(changelogPath);
+    const entries = parseChangelog(changelogPath, prefix);
     const normalizedVersion = version.replace(/^v/, '');
 
     const versionEntry = entries.find(e =>
@@ -284,13 +298,6 @@ function findUnreleasedSection(content: string, unreleasedHeader: string): {
     contentStart: headerEnd,
     contentEnd
   };
-}
-
-/**
- * Escape special regex characters in a string
- */
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**

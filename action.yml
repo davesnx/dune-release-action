@@ -53,10 +53,14 @@ inputs:
     description: 'If true, creates the GitHub release as a draft so the tarball can be inspected before publishing. Draft mode skips the opam-repository PR; submit to opam after publishing the release'
     required: false
     default: 'false'
+  tag-prefix:
+    description: 'Literal prefix to strip from the git tag to get the package version (e.g. "mypkg." turns tag mypkg.1.2.0 into version 1.2.0). The full tag is still passed to dune-release. Defaults to no prefix'
+    required: false
+    default: ''
 
 outputs:
   version:
-    description: 'Extracted version from git tag'
+    description: 'Package version extracted from the git tag, with tag-prefix removed'
   release-status:
     description: 'Status of the release (success/failed)'
   github-release-url:

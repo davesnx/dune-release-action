@@ -197,17 +197,22 @@ export class ReleaseManager {
   }
 
   /**
-   * Extract version from git tag
+   * Extract the package version from the git tag, stripping `tagPrefix` when configured
+   * (tag `mypkg.1.2.0` with prefix `mypkg.` gives version `1.2.0`).
    */
-  private extractVersion(): string {
+  private extractVersion(tagPrefix: string = ''): string {
     try {
       const tag = this.context.ref.replace('refs/tags/', '');
       if (!tag || tag === this.context.ref) {
         throw new Error('No valid git tag found in ref');
       }
-      core.setOutput('version', tag);
-      this.info(`Extracted version: ${tag}`);
-      return tag;
+      if (tagPrefix && !tag.startsWith(tagPrefix)) {
+        throw new Error(`Tag ${tag} does not start with the configured tag-prefix "${tagPrefix}"`);
+      }
+      const version = tagPrefix ? tag.slice(tagPrefix.length) : tag;
+      core.setOutput('version', version);
+      this.info(`Extracted version: ${version}`);
+      return version;
     } catch (error: any) {
       core.error(`Failed to extract version from ref ${this.context.ref}: ${error.message}`);
       throw new Error(`Could not extract version: ${error.message}`);
@@ -364,7 +369,8 @@ export class ReleaseManager {
     publishMessage?: string,
     preamble?: string,
     dryRun: boolean = false,
-    draft: boolean = false
+    draft: boolean = false,
+    tagPrefix: string = ''
   ): Promise<void> {
     let versionChangelogPath: string | null = null;
 
@@ -372,7 +378,9 @@ export class ReleaseManager {
       this.checkDependencies();
       this.validateNewTag();
       this.configureGit();
-      const version = this.extractVersion();
+      const version = this.extractVersion(tagPrefix);
+      const tagName = this.context.ref.replace('refs/tags/', '');
+      const tagArgs = tagPrefix ? [`--tag=${tagName}`, `--pkg-version=${version}`] : [];
 
       if (draft && toOpamRepository) {
         core.warning('Draft mode: the opam-repository PR will not be opened. Publish the draft GitHub release first, then submit to opam.');
@@ -401,7 +409,7 @@ export class ReleaseManager {
           core.warning('Proceeding without changelog - release will succeed but no changelog will be included');
           changelogPath = null;
         } else {
-          const validation = validateChangelog(changelogPath, version);
+          const validation = validateChangelog(changelogPath, version, tagPrefix);
 
           if (validation.warnings.length > 0) {
             validation.warnings.forEach(warning => core.warning(warning));
@@ -419,7 +427,7 @@ export class ReleaseManager {
             `${changelogFilename}-${version}${Path.extname(changelogPath)}`
           );
 
-          extractVersionChangelog(absoluteChangelogPath, version, versionChangelogPath);
+          extractVersionChangelog(absoluteChangelogPath, version, versionChangelogPath, tagPrefix);
 
           try {
             const extractedContent = this.executor.readFile(versionChangelogPath);
@@ -444,7 +452,7 @@ export class ReleaseManager {
       this.cloneOpamRepository(duneConfig.local, opamRepository);
 
       core.startGroup('Distributing release archive');
-      const distribArgs = ['-p', packages, '--skip-tests', '--skip-lint'];
+      const distribArgs = ['-p', packages, '--skip-tests', '--skip-lint', ...tagArgs];
       if (includeSubmodules) {
         distribArgs.push('--include-submodules');
       }
@@ -454,7 +462,6 @@ export class ReleaseManager {
       this.runDuneRelease('distrib', distribArgs);
       core.endGroup();
 
-      const tagName = this.context.ref.replace('refs/tags/', '');
       const githubReleaseUrl = draft
         ? `https://github.com/${this.context.repository}/releases`
         : `https://github.com/${this.context.repository}/releases/tag/${tagName}`;
@@ -470,7 +477,7 @@ export class ReleaseManager {
           process.env.DUNE_RELEASE_DELEGATE = 'github-dune-release';
           process.env.GITHUB_TOKEN = this.context.token;
           this.info('Setting GITHUB_TOKEN environment variable for dune-release');
-          const publishArgs = ['--yes'];
+          const publishArgs = ['--yes', ...tagArgs];
           if (changelogPath) {
             publishArgs.push(`--change-log=${changelogPath}`);
           }
@@ -500,7 +507,7 @@ export class ReleaseManager {
       }
 
       core.startGroup(`Packaging opam release for ${packages}`);
-      const opamPkgArgs = ['pkg', '-p', packages, '--yes'];
+      const opamPkgArgs = ['pkg', '-p', packages, '--yes', ...tagArgs];
       if (changelogPath) {
         opamPkgArgs.push(`--change-log=${changelogPath}`);
       }
@@ -526,7 +533,7 @@ export class ReleaseManager {
           process.env.GITHUB_TOKEN = this.context.token;
           this.info('Setting GITHUB_TOKEN environment variable for dune-release');
           this.executor.chdir(this.context.workspace);
-          const opamSubmitArgs = ['submit', '-p', packages, '--yes'];
+          const opamSubmitArgs = ['submit', '-p', packages, '--yes', ...tagArgs];
           if (changelogPath) {
             opamSubmitArgs.push(`--change-log=${changelogPath}`);
           }
