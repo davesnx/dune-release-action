@@ -29978,7 +29978,10 @@ exports.getVersions = getVersions;
 exports.addVersionSection = addVersionSection;
 const core = __importStar(__nccwpck_require__(7484));
 const fs_1 = __importDefault(__nccwpck_require__(9896));
-const VERSION_PATTERN = /^#{1,3}\s+v?(\d+(?:\.\d+)*(?:-[a-zA-Z0-9.]+)?)\s*(?:\(([^)]+)\))?/;
+const version_1 = __nccwpck_require__(2634);
+// A version header's token is any opam-valid string that contains at least one
+// digit, so "### Added" / "## Unreleased" / "# Changelog" are not mistaken for versions.
+const VERSION_PATTERN = /^#{1,3}\s+([A-Za-z0-9_+.~-]*\d[A-Za-z0-9_+.~-]*)\s*(?:\(([^)]+)\))?/;
 const TITLE_PATTERN = /^#\s+(Changelog|Changes)\s*$/i;
 function parseChangelog(changelogPath) {
     try {
@@ -30004,7 +30007,7 @@ function parseChangelog(changelogPath) {
                     entries.push(currentEntry);
                 }
                 currentEntry = {
-                    version: versionMatch[1],
+                    version: (0, version_1.dropLeadingV)(versionMatch[1]),
                     date: versionMatch[2],
                     content: ''
                 };
@@ -30029,7 +30032,7 @@ function parseChangelog(changelogPath) {
 }
 // Strip 'v' prefix and trailing '.0' segments so 0.11 matches 0.11.0
 function normalizeVersion(version) {
-    return version.replace(/^v/, '').replace(/(?:\.0)+$/, '');
+    return (0, version_1.dropLeadingV)(version).replace(/(?:\.0)+$/, '');
 }
 function versionsMatch(a, b) {
     return normalizeVersion(a) === normalizeVersion(b);
@@ -30092,7 +30095,7 @@ function validateChangelog(changelogPath, expectedVersion) {
 function extractVersionChangelog(changelogPath, version, outputPath) {
     try {
         const entries = parseChangelog(changelogPath);
-        const normalizedVersion = version.replace(/^v/, '');
+        const normalizedVersion = (0, version_1.dropLeadingV)(version);
         const versionEntry = entries.find(e => e.version === normalizedVersion ||
             e.version === `v${normalizedVersion}`);
         if (!versionEntry) {
@@ -30403,6 +30406,40 @@ function addVersionSection(changelogPath, version, date, entries, unreleasedHead
 
 /***/ }),
 
+/***/ 2634:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.OPAM_VERSION_CHARS = void 0;
+exports.dropLeadingV = dropLeadingV;
+exports.versionFromTag = versionFromTag;
+// opam's Version.of_string rule (ocaml/opam src/format/opamPackage.ml).
+exports.OPAM_VERSION_CHARS = /^[A-Za-z0-9_+.~-]+$/;
+const INVALID_CHAR = /[^A-Za-z0-9_+.~-]/;
+// dune-release drops a leading v/V unconditionally; this action only drops it when a
+// digit follows, so tags like "vendor-1.0" keep their v. The result is passed with
+// --pkg-version, so dune-release's own rule never runs.
+function dropLeadingV(tag) {
+    return /^[vV]\d/.test(tag) ? tag.slice(1) : tag;
+}
+function versionFromTag(tag) {
+    const version = dropLeadingV(tag);
+    if (version.length === 0) {
+        throw new Error(`Package version can't be empty`);
+    }
+    if (!exports.OPAM_VERSION_CHARS.test(version)) {
+        const badChar = version.match(INVALID_CHAR)[0];
+        throw new Error(`Invalid character '${badChar}' in package version "${version}". ` +
+            'Allowed characters are letters, digits, and _ + . ~ -');
+    }
+    return version;
+}
+
+
+/***/ }),
+
 /***/ 828:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -30455,6 +30492,7 @@ const fs_1 = __importDefault(__nccwpck_require__(9896));
 const path_1 = __importDefault(__nccwpck_require__(6928));
 const os_1 = __importDefault(__nccwpck_require__(857));
 const changelog_1 = __nccwpck_require__(7900);
+const version_1 = __nccwpck_require__(2634);
 exports.defaultExecutor = {
     exec(command, options = {}) {
         const result = (0, child_process_1.execSync)(command, {
@@ -30520,6 +30558,7 @@ class ReleaseManager {
     context;
     verbose;
     executor;
+    pkgVersion = '';
     duneReleasePrefix = 'dune-release';
     constructor(context, verbose = false, executor = exports.defaultExecutor) {
         this.context = context;
@@ -30610,8 +30649,9 @@ class ReleaseManager {
             if (!tag || tag === this.context.ref) {
                 throw new Error('No valid git tag found in ref');
             }
+            this.pkgVersion = (0, version_1.versionFromTag)(tag);
             core.setOutput('version', tag);
-            this.info(`Extracted version: ${tag}`);
+            this.info(`Extracted version: ${tag} (opam version ${this.pkgVersion})`);
             return tag;
         }
         catch (error) {
@@ -30803,7 +30843,7 @@ class ReleaseManager {
             this.setupDuneReleaseConfig(duneConfig);
             this.cloneOpamRepository(duneConfig.local, opamRepository);
             core.startGroup('Distributing release archive');
-            const distribArgs = ['-p', packages, '--skip-tests', '--skip-lint'];
+            const distribArgs = ['-p', packages, '--skip-tests', '--skip-lint', `--tag=${version}`, `--pkg-version=${this.pkgVersion}`];
             if (includeSubmodules) {
                 distribArgs.push('--include-submodules');
             }
@@ -30828,7 +30868,7 @@ class ReleaseManager {
                     process.env.DUNE_RELEASE_DELEGATE = 'github-dune-release';
                     process.env.GITHUB_TOKEN = this.context.token;
                     this.info('Setting GITHUB_TOKEN environment variable for dune-release');
-                    const publishArgs = ['--yes'];
+                    const publishArgs = ['--yes', `--tag=${version}`, `--pkg-version=${this.pkgVersion}`];
                     if (changelogPath) {
                         publishArgs.push(`--change-log=${changelogPath}`);
                     }
@@ -30859,7 +30899,7 @@ class ReleaseManager {
                 core.endGroup();
             }
             core.startGroup(`Packaging opam release for ${packages}`);
-            const opamPkgArgs = ['pkg', '-p', packages, '--yes'];
+            const opamPkgArgs = ['pkg', '-p', packages, '--yes', `--tag=${version}`, `--pkg-version=${this.pkgVersion}`];
             if (changelogPath) {
                 opamPkgArgs.push(`--change-log=${changelogPath}`);
             }
@@ -30884,7 +30924,7 @@ class ReleaseManager {
                     process.env.GITHUB_TOKEN = this.context.token;
                     this.info('Setting GITHUB_TOKEN environment variable for dune-release');
                     this.executor.chdir(this.context.workspace);
-                    const opamSubmitArgs = ['submit', '-p', packages, '--yes'];
+                    const opamSubmitArgs = ['submit', '-p', packages, '--yes', `--tag=${version}`, `--pkg-version=${this.pkgVersion}`];
                     if (changelogPath) {
                         opamSubmitArgs.push(`--change-log=${changelogPath}`);
                     }

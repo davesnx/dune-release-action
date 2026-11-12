@@ -1,5 +1,6 @@
 import * as core from '@actions/core';
 import Fs from 'fs';
+import { dropLeadingV } from './version';
 
 export interface ChangelogEntry {
   version: string;
@@ -16,7 +17,9 @@ export interface ChangelogValidation {
   errors: string[];
 }
 
-const VERSION_PATTERN = /^#{1,3}\s+v?(\d+(?:\.\d+)*(?:-[a-zA-Z0-9.]+)?)\s*(?:\(([^)]+)\))?/;
+// A version header's token is any opam-valid string that contains at least one
+// digit, so "### Added" / "## Unreleased" / "# Changelog" are not mistaken for versions.
+const VERSION_PATTERN = /^#{1,3}\s+([A-Za-z0-9_+.~-]*\d[A-Za-z0-9_+.~-]*)\s*(?:\(([^)]+)\))?/;
 const TITLE_PATTERN = /^#\s+(Changelog|Changes)\s*$/i;
 
 export function parseChangelog(changelogPath: string): ChangelogEntry[] {
@@ -48,7 +51,7 @@ export function parseChangelog(changelogPath: string): ChangelogEntry[] {
         }
 
           currentEntry = {
-            version: versionMatch[1],
+            version: dropLeadingV(versionMatch[1]),
             date: versionMatch[2],
             content: ''
           };
@@ -73,7 +76,7 @@ export function parseChangelog(changelogPath: string): ChangelogEntry[] {
 
 // Strip 'v' prefix and trailing '.0' segments so 0.11 matches 0.11.0
 function normalizeVersion(version: string): string {
-  return version.replace(/^v/, '').replace(/(?:\.0)+$/, '');
+  return dropLeadingV(version).replace(/(?:\.0)+$/, '');
 }
 
 function versionsMatch(a: string, b: string): boolean {
@@ -164,7 +167,7 @@ export function extractVersionChangelog(
 ): void {
   try {
     const entries = parseChangelog(changelogPath);
-    const normalizedVersion = version.replace(/^v/, '');
+    const normalizedVersion = dropLeadingV(version);
 
     const versionEntry = entries.find(e =>
       e.version === normalizedVersion ||

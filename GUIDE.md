@@ -86,7 +86,7 @@ jobs:
 
 As you work, add changes under `# Unreleased`. Before releasing, create a new header with the version and move all items there.
 
-The version header can be `## 1.0.0`, `## 1.0.0 (date)`, or `## 1.0.0-beta.1`. See [html_of_jsx/CHANGES.md](https://github.com/davesnx/html_of_jsx/blob/main/CHANGES.md) for a real example.
+The version header can be `## 1.0.0`, `## 1.0.0 (date)`, or `## 1.0.0-beta.1`. Any version that opam accepts works, for example `## 2024.09.22`, as long as it contains a digit and matches the tag you push. A leading `v` is optional. See [html_of_jsx/CHANGES.md](https://github.com/davesnx/html_of_jsx/blob/main/CHANGES.md) for a real example.
 
 ```markdown
 # Unreleased
@@ -113,3 +113,5 @@ git push origin 1.2.0
 ```
 
 This triggers the release workflow since you pushed a new tag.
+
+The tag must be a valid opam version: letters, digits, and `_ + . ~ -`. A leading `v` before a digit is dropped for the package version, so `v1.2.0` and `1.2.0` both release `1.2.0`.
