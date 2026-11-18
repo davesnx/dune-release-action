@@ -29,6 +29,7 @@ const parseInput = (): Input => {
   const changelogPath = changelogInput || DEFAULT_CHANGELOG_PATH;
 
   const token = core.getInput('github-token', { required: true });
+  core.setSecret(token);
 
   const toOpamRepository = core.getInput('to-opam-repository') !== 'false';
 

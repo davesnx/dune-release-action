@@ -194,6 +194,88 @@ describe('Git configuration', () => {
     const gitConfigUrl = `https://x-access-token:${context.token}@github.com/`;
     assert.ok(gitConfigUrl.includes(context.token));
   });
+
+  test('never puts the token on a command line or in logs, and passes it via env', async () => {
+    const token = 'ghp_SuperSecretToken123';
+    const savedEnv = { ...process.env };
+    const logged: string[] = [];
+    const savedWrite = process.stdout.write.bind(process.stdout);
+    (process.stdout as any).write = (chunk: any) => {
+      logged.push(String(chunk));
+      return true;
+    };
+    const mockExecutor = createMockExecutor({
+      execResults: new Map([
+        ['opam --version', '2.1.0'],
+        ['dune-release --version', '2.0.0'],
+        ['git ls-remote', ''],
+      ]),
+      // Force `git config` and the release to fail, so every error path runs
+      execErrors: new Map([
+        ['git config', new Error(`fatal: could not lock config file`)],
+      ])
+    });
+    const manager = new ReleaseManager(createTestContext({ token }), true, mockExecutor);
+    let thrown: Error | undefined;
+    try {
+      await manager.runRelease('pkg', null, createTestConfig(), true, true);
+    } catch (error: any) {
+      thrown = error;
+    } finally {
+      (process.stdout as any).write = savedWrite;
+    }
+    try {
+      assert.ok(thrown, 'release should fail');
+      assert.ok(!thrown!.message.includes(token), 'thrown message must not contain the token');
+      for (const command of mockExecutor.commands) {
+        assert.ok(!command.includes(token), `command must not contain the token: ${command}`);
+      }
+      assert.ok(!logged.join('').includes(token), 'logs must not contain the token');
+      const count = Number(process.env.GIT_CONFIG_COUNT);
+      const values: string[] = [];
+      for (let i = 0; i < count; i++) {
+        if (process.env[`GIT_CONFIG_KEY_${i}`] === `url.https://x-access-token:${token}@github.com/.insteadOf`) {
+          values.push(process.env[`GIT_CONFIG_VALUE_${i}`]!);
+        }
+      }
+      assert.deepStrictEqual(values, ['https://github.com/', 'git@github.com:']);
+    } finally {
+      process.env = savedEnv;
+    }
+  });
+
+  test('redacts the token from failing command output', async () => {
+    const token = 'ghp_AnotherSecret456';
+    const savedEnv = { ...process.env };
+    const savedWrite = process.stdout.write.bind(process.stdout);
+    const logged: string[] = [];
+    (process.stdout as any).write = (chunk: any) => { logged.push(String(chunk)); return true; };
+    const mockExecutor = createMockExecutor({
+      execResults: new Map([
+        ['opam --version', '2.1.0'],
+        ['dune-release --version', '2.0.0'],
+        ['git ls-remote', ''],
+        ['git config', ''],
+      ]),
+      execErrors: new Map([
+        ['git clone', new Error(`fatal: unable to access 'https://x-access-token:${token}@github.com/ocaml/opam-repository.git/'`)],
+      ])
+    });
+    const manager = new ReleaseManager(createTestContext({ token }), true, mockExecutor);
+    let thrown: Error | undefined;
+    try {
+      await manager.runRelease('pkg', null, createTestConfig(), true, true);
+    } catch (error: any) {
+      thrown = error;
+    } finally {
+      (process.stdout as any).write = savedWrite;
+      process.env = savedEnv;
+    }
+    assert.ok(thrown);
+    assert.ok(!thrown!.message.includes(token));
+    assert.ok(logged.join('').includes('x-access-token:***@github.com'));
+    assert.ok(!logged.join('').includes(token));
+  });
 });
 
 // ============================================================================
