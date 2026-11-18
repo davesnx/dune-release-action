@@ -52,7 +52,7 @@ jobs:
           ocaml-compiler: 5.3.0
       - run: opam install . --deps-only -y
       - run: opam install dune-release -y
-      - uses: davesnx/dune-release-action/lint@v0.5.0
+      - uses: davesnx/dune-release-action/lint@v0.6.0
         with:
           packages: your-package
 ```
@@ -76,7 +76,7 @@ jobs:
       - run: opam install . --deps-only
       - run: opam install dune-release -y
 
-      - uses: davesnx/dune-release-action@v0.5.0
+      - uses: davesnx/dune-release-action@v0.6.0
         with:
           packages: 'your-package'
           github-token: ${{ secrets.GH_TOKEN }}

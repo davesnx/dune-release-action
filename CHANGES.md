@@ -4,6 +4,10 @@
 
 - Fix `github-token` leaking into logs and error messages: the token is now registered with `core.setSecret`, passed to git through `GIT_CONFIG_*` environment variables instead of `git config --global` command lines, and redacted from failed-command output. The token is no longer written to `~/.gitconfig`; git 2.31 or newer is required [@davesnx](https://github.com/davesnx)
 
+## v0.6.0
+
+- Run `dune-release` directly when it's on PATH, falling back to `dune tools exec` when `dune.lock` is present and then to `opam exec`, which is now the only case where `opam` is required [#7](https://github.com/davesnx/dune-release-action/issues/7) [@davesnx](https://github.com/davesnx)
+
 ## v0.5.0
 
 - Add `draft` input to create the GitHub release as a draft, skipping the opam-repository PR, so the tarball can be inspected before publishing [#4](https://github.com/davesnx/dune-release-action/issues/4) [@davesnx](https://github.com/davesnx)
