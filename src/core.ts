@@ -68,6 +68,21 @@ export const defaultExecutor: Executor = {
   }
 };
 
+/**
+ * Append git config entries to the environment (GIT_CONFIG_COUNT/KEY/VALUE),
+ * so they reach every child git process without appearing on a command line.
+ */
+export function addGitConfigEnv(env: NodeJS.ProcessEnv, entries: Array<[string, string]>): void {
+  const parsed = Number.parseInt(env.GIT_CONFIG_COUNT ?? '', 10);
+  let count = Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
+  for (const [key, value] of entries) {
+    env[`GIT_CONFIG_KEY_${count}`] = key;
+    env[`GIT_CONFIG_VALUE_${count}`] = value;
+    count++;
+  }
+  env.GIT_CONFIG_COUNT = String(count);
+}
+
 export function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
@@ -103,6 +118,7 @@ export class ReleaseManager {
   private context: GitHubContext;
   private verbose: boolean;
   private executor: Executor;
+  private gitCredentialsConfigured: boolean = false;
   private duneReleasePrefix: string = 'dune-release';
 
   constructor(context: GitHubContext, verbose: boolean = false, executor: Executor = defaultExecutor) {
@@ -125,16 +141,40 @@ export class ReleaseManager {
    */
   private exec(command: string, options: { silent?: boolean } = {}): string {
     if (!options.silent) {
-      this.info(`> ${command}`);
+      this.info(`> ${this.redact(command)}`);
     }
 
     try {
       return this.executor.exec(command, { silent: options.silent });
     } catch (error: any) {
-      const message = `Command failed: ${command}\n${error.message}`;
+      const message = this.redact(`Command failed: ${command}\n${error.message}`);
       core.error(message);
       throw new Error(message);
     }
+  }
+
+  /**
+   * Remove the GitHub token from text that may be logged or thrown
+   */
+  private redact(text: string): string {
+    const token = this.context.token;
+    return token ? text.split(token).join('***') : text;
+  }
+
+  /**
+   * Make git use the token for github.com HTTPS and SSH URLs.
+   * The token goes through the environment, never through a command line.
+   */
+  private configureGitCredentials(): void {
+    if (this.gitCredentialsConfigured) {
+      return;
+    }
+    const gitConfig = `https://x-access-token:${this.context.token}@github.com/`;
+    addGitConfigEnv(process.env, [
+      [`url.${gitConfig}.insteadOf`, 'https://github.com/'],
+      [`url.${gitConfig}.insteadOf`, 'git@github.com:']
+    ]);
+    this.gitCredentialsConfigured = true;
   }
 
   /**
@@ -225,9 +265,7 @@ export class ReleaseManager {
       this.exec('git config --global user.email "actions@github.com"');
 
       // Configure git to use token for both HTTPS and SSH URLs
-      const gitConfig = `https://x-access-token:${this.context.token}@github.com/`;
-      this.exec(`git config --global url."${gitConfig}".insteadOf "https://github.com/"`);
-      this.exec(`git config --global url."${gitConfig}".insteadOf "git@github.com:"`);
+      this.configureGitCredentials();
 
       this.info('Git configuration completed');
     } catch (error: any) {
@@ -314,9 +352,7 @@ export class ReleaseManager {
     this.info(`Attempting to delete tag ${tagName}`);
 
     // Configure git with token for both HTTPS and SSH URLs
-    const gitConfig = `https://x-access-token:${this.context.token}@github.com/`;
-    this.exec(`git config --global url."${gitConfig}".insteadOf "https://github.com/"`, { silent: true });
-    this.exec(`git config --global url."${gitConfig}".insteadOf "git@github.com:"`, { silent: true });
+    this.configureGitCredentials();
 
     try {
       const remoteTags = this.exec('git ls-remote --tags origin', { silent: true });
