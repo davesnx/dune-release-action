@@ -30027,7 +30027,6 @@ function parseChangelog(changelogPath) {
         throw new Error(`Failed to parse changelog: ${error.message}`);
     }
 }
-// Strip 'v' prefix and trailing '.0' segments so 0.11 matches 0.11.0
 function normalizeVersion(version) {
     return version.replace(/^v/, '').replace(/(?:\.0)+$/, '');
 }
@@ -30074,7 +30073,6 @@ function validateChangelog(changelogPath, expectedVersion) {
             validation.valid = false;
             validation.errors.push(`Changelog entry for ${expectedVersion} is empty`);
         }
-        // Warn if content is very short (likely incomplete)
         if (versionEntry.content.trim().length < 20) {
             validation.warnings.push(`Changelog entry for ${expectedVersion} seems very short. ` +
                 `Make sure to document all changes.`);
@@ -30086,9 +30084,6 @@ function validateChangelog(changelogPath, expectedVersion) {
     }
     return validation;
 }
-/**
- * Extract version-specific changelog content and write to a temporary file
- */
 function extractVersionChangelog(changelogPath, version, outputPath) {
     try {
         const entries = parseChangelog(changelogPath);
@@ -30098,7 +30093,6 @@ function extractVersionChangelog(changelogPath, version, outputPath) {
         if (!versionEntry) {
             throw new Error(`No changelog entry found for version ${version}`);
         }
-        // Write the version content to the output file
         const content = `## ${version}${versionEntry.date ? ` (${versionEntry.date})` : ''}\n\n${versionEntry.content}\n`;
         fs_1.default.writeFileSync(outputPath, content, 'utf-8');
         core.info(`Created version-specific changelog at: ${outputPath}`);
@@ -30107,40 +30101,27 @@ function extractVersionChangelog(changelogPath, version, outputPath) {
         throw new Error(`Failed to extract version changelog: ${error.message}`);
     }
 }
-/**
- * Format a commit entry for the changelog
- * Format: "- {message} by @{author} ([#{prNumber}](url))"
- *      or "- {message} by @{author} ([sha](commit-url))" if no PR
- *      or "- {message} by @{author}" if no PR and no SHA
- */
 function formatCommitEntry(entry) {
     const authorDisplay = entry.author.startsWith('@') ? entry.author : `@${entry.author}`;
     let linkSuffix = '';
     if (entry.prNumber && entry.repoUrl) {
-        // Link to PR
         linkSuffix = ` ([#${entry.prNumber}](${entry.repoUrl}/pull/${entry.prNumber}))`;
     }
     else if (entry.prNumber) {
-        // PR number without link
         linkSuffix = ` (#${entry.prNumber})`;
     }
     else if (entry.commitSha && entry.repoUrl) {
-        // Link to commit (short SHA display)
         const shortSha = entry.commitSha.substring(0, 7);
         linkSuffix = ` ([${shortSha}](${entry.repoUrl}/commit/${entry.commitSha}))`;
     }
     return `- ${entry.message} by ${authorDisplay}${linkSuffix}`;
 }
-/**
- * Check if an entry (by message) already exists in the changelog
- */
 function isEntryInChangelog(changelogPath, message) {
     try {
         if (!fs_1.default.existsSync(changelogPath)) {
             return false;
         }
         const content = fs_1.default.readFileSync(changelogPath, 'utf-8');
-        // Normalize whitespace for comparison
         const normalizedMessage = message.trim().toLowerCase();
         const normalizedContent = content.toLowerCase();
         return normalizedContent.includes(normalizedMessage);
@@ -30149,20 +30130,13 @@ function isEntryInChangelog(changelogPath, message) {
         return false;
     }
 }
-/**
- * Read the raw changelog content, preserving the file structure
- */
 function readChangelogContent(changelogPath) {
     if (!fs_1.default.existsSync(changelogPath)) {
         return '';
     }
     return fs_1.default.readFileSync(changelogPath, 'utf-8');
 }
-/**
- * Find the position and match of the unreleased header in the content
- */
 function findUnreleasedSection(content, unreleasedHeader) {
-    // Find the unreleased header (case-insensitive)
     const headerRegex = new RegExp(`^${escapeRegex(unreleasedHeader)}\\s*$`, 'mi');
     const headerMatch = content.match(headerRegex);
     if (!headerMatch || headerMatch.index === undefined) {
@@ -30170,7 +30144,6 @@ function findUnreleasedSection(content, unreleasedHeader) {
     }
     const headerStart = headerMatch.index;
     const headerEnd = headerStart + headerMatch[0].length;
-    // Find where the content ends (next ## header or end of file)
     const nextHeaderRegex = /^##\s+/m;
     const afterHeader = content.slice(headerEnd);
     const nextHeaderMatch = afterHeader.match(nextHeaderRegex);
@@ -30184,41 +30157,23 @@ function findUnreleasedSection(content, unreleasedHeader) {
         contentEnd
     };
 }
-/**
- * Escape special regex characters in a string
- */
 function escapeRegex(str) {
     return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
-/**
- * Add entries to the Unreleased section of the changelog
- * Creates the section if it doesn't exist
- */
 function addToUnreleased(changelogPath, entries, unreleasedHeader = '## Unreleased') {
     if (entries.length === 0) {
         return;
     }
     let content = readChangelogContent(changelogPath);
     const formattedEntries = entries.map(formatCommitEntry).join('\n');
-    // Find existing unreleased section
     const unreleasedSection = findUnreleasedSection(content, unreleasedHeader);
     if (unreleasedSection) {
-        // Get content before the unreleased header (title etc)
         const beforeHeader = content.slice(0, unreleasedSection.headerStart).trimEnd();
-        // Get existing entries in unreleased section
         const existingContent = content.slice(unreleasedSection.contentStart, unreleasedSection.contentEnd).trim();
-        // Get content after unreleased section (version sections)
         const afterContent = content.slice(unreleasedSection.contentEnd).trim();
-        // Build entries block: new entries first, then existing
         const entriesBlock = existingContent
             ? `${formattedEntries}\n${existingContent}`
             : formattedEntries;
-        // Rebuild with consistent spacing:
-        // - blank line after title
-        // - header
-        // - blank line after header
-        // - entries
-        // - blank line before next section
         const parts = [beforeHeader, '', unreleasedHeader, '', entriesBlock];
         if (afterContent) {
             parts.push('', afterContent);
@@ -30226,30 +30181,21 @@ function addToUnreleased(changelogPath, entries, unreleasedHeader = '## Unreleas
         content = parts.join('\n') + '\n';
     }
     else {
-        // No unreleased section exists - create one
-        // Check if there's a title line (# Changelog or similar)
         const titleMatch = content.match(/^#\s+[^\n]+\n/);
         if (titleMatch) {
-            // Insert after the title
             const afterTitle = titleMatch[0].length;
             const newSection = `\n${unreleasedHeader}\n\n${formattedEntries}\n`;
             content = content.slice(0, afterTitle) + newSection + content.slice(afterTitle);
         }
         else if (content.trim() === '') {
-            // Empty file - create with title and unreleased section
             content = `# Changelog\n\n${unreleasedHeader}\n\n${formattedEntries}\n`;
         }
         else {
-            // No title, prepend unreleased section
             content = `${unreleasedHeader}\n\n${formattedEntries}\n\n${content}`;
         }
     }
     fs_1.default.writeFileSync(changelogPath, content, 'utf-8');
 }
-/**
- * Promote the Unreleased section to a versioned section
- * Moves all content from Unreleased to a new version header and creates a fresh Unreleased section
- */
 function promoteUnreleasedToVersion(changelogPath, version, date, unreleasedHeader = '## Unreleased') {
     let content = readChangelogContent(changelogPath);
     if (!content.trim()) {
@@ -30259,24 +30205,16 @@ function promoteUnreleasedToVersion(changelogPath, version, date, unreleasedHead
     if (!unreleasedSection) {
         throw new Error(`Unreleased section not found in changelog (looking for "${unreleasedHeader}")`);
     }
-    // Extract the unreleased content
     const unreleasedContent = content
         .slice(unreleasedSection.contentStart, unreleasedSection.contentEnd)
         .trim();
     if (!unreleasedContent) {
         throw new Error('Unreleased section is empty - nothing to promote');
     }
-    // Build the new version section
     const normalizedVersion = version.startsWith('v') ? version : `v${version}`;
     const versionHeader = `## ${normalizedVersion} (${date})`;
-    // Build the new content:
-    // 1. Everything before unreleased header
-    // 2. Fresh unreleased section
-    // 3. New version section with the old unreleased content
-    // 4. Everything after the old unreleased content
     const beforeUnreleased = content.slice(0, unreleasedSection.headerStart);
     const afterUnreleased = content.slice(unreleasedSection.contentEnd);
-    // Build with proper spacing between sections
     const parts = [
         beforeUnreleased.trimEnd(),
         '',
@@ -30286,21 +30224,17 @@ function promoteUnreleasedToVersion(changelogPath, version, date, unreleasedHead
         '',
         unreleasedContent
     ];
-    // Add trailing content with proper separation
     const trimmedAfter = afterUnreleased.trimStart();
     if (trimmedAfter) {
-        parts.push(''); // Blank line before next section
+        parts.push('');
         parts.push(trimmedAfter);
     }
     else {
-        parts.push(''); // Ensure file ends with newline
+        parts.push('');
     }
     const newContent = parts.join('\n');
     fs_1.default.writeFileSync(changelogPath, newContent, 'utf-8');
 }
-/**
- * Get the content of the Unreleased section
- */
 function getUnreleasedContent(changelogPath, unreleasedHeader = '## Unreleased') {
     const content = readChangelogContent(changelogPath);
     if (!content) {
@@ -30312,9 +30246,6 @@ function getUnreleasedContent(changelogPath, unreleasedHeader = '## Unreleased')
     }
     return content.slice(unreleasedSection.contentStart, unreleasedSection.contentEnd).trim();
 }
-/**
- * Check if a version exists in the changelog
- */
 function hasVersion(changelogPath, version) {
     try {
         const entries = parseChangelog(changelogPath);
@@ -30327,9 +30258,6 @@ function hasVersion(changelogPath, version) {
         return false;
     }
 }
-/**
- * Get all versions in the changelog
- */
 function getVersions(changelogPath) {
     try {
         const entries = parseChangelog(changelogPath);
@@ -30341,10 +30269,6 @@ function getVersions(changelogPath) {
         return [];
     }
 }
-/**
- * Add a version section to the changelog (for backfilling)
- * Inserts the version in chronological order (newer versions at top)
- */
 function addVersionSection(changelogPath, version, date, entries, unreleasedHeader = '## Unreleased') {
     let content = readChangelogContent(changelogPath);
     const normalizedVersion = version.startsWith('v') ? version : `v${version}`;
@@ -30352,32 +30276,22 @@ function addVersionSection(changelogPath, version, date, entries, unreleasedHead
     const formattedEntries = entries.length > 0
         ? entries.map(formatCommitEntry).join('\n')
         : '- Initial release';
-    // Version section with proper spacing (blank line after entries)
     const versionSection = `${versionHeader}\n\n${formattedEntries}`;
     if (!content.trim()) {
-        // Empty file - create with title, unreleased, and version
         content = `# Changelog\n\n${unreleasedHeader}\n\n${versionSection}\n`;
         fs_1.default.writeFileSync(changelogPath, content, 'utf-8');
         return;
     }
-    // Find the unreleased section
     const unreleasedSection = findUnreleasedSection(content, unreleasedHeader);
     if (unreleasedSection) {
-        // Get content before unreleased header
         const beforeHeader = content.slice(0, unreleasedSection.headerStart).trimEnd();
-        // Get unreleased section content
         const unreleasedContent = content.slice(unreleasedSection.contentStart, unreleasedSection.contentEnd).trim();
-        // Get content after unreleased section (existing versions)
         const afterUnreleased = content.slice(unreleasedSection.contentEnd).trim();
-        // Rebuild with consistent spacing
         const parts = [beforeHeader, '', unreleasedHeader];
-        // Add unreleased content if any
         if (unreleasedContent) {
             parts.push('', unreleasedContent);
         }
-        // Add new version section
         parts.push('', versionSection);
-        // Add existing versions if any
         if (afterUnreleased) {
             parts.push('', afterUnreleased);
         }
@@ -30385,7 +30299,6 @@ function addVersionSection(changelogPath, version, date, entries, unreleasedHead
         fs_1.default.writeFileSync(changelogPath, newContent, 'utf-8');
     }
     else {
-        // No unreleased section - check for title
         const titleMatch = content.match(/^#\s+[^\n]+\n/);
         if (titleMatch) {
             const afterTitle = titleMatch[0].length;
@@ -30393,7 +30306,6 @@ function addVersionSection(changelogPath, version, date, entries, unreleasedHead
             fs_1.default.writeFileSync(changelogPath, newContent, 'utf-8');
         }
         else {
-            // No title - prepend everything
             content = `# Changelog\n\n${unreleasedHeader}\n\n${versionSection}\n\n${content}`;
             fs_1.default.writeFileSync(changelogPath, content, 'utf-8');
         }
@@ -30526,17 +30438,11 @@ class ReleaseManager {
         this.verbose = verbose;
         this.executor = executor;
     }
-    /**
-     * Conditional info logging - only logs if verbose mode is enabled
-     */
     info(message) {
         if (this.verbose) {
             core.info(message);
         }
     }
-    /**
-     * Execute a command and return its output
-     */
     exec(command, options = {}) {
         if (!options.silent) {
             this.info(`> ${command}`);
@@ -30550,9 +30456,6 @@ class ReleaseManager {
             throw new Error(message);
         }
     }
-    /**
-     * Validate that the tag is new and doesn't exist on remote
-     */
     validateNewTag() {
         core.startGroup('Validating tag');
         try {
@@ -30573,10 +30476,6 @@ class ReleaseManager {
         }
         core.endGroup();
     }
-    /**
-     * Try dune-release directly, then `dune tools exec` (if dune.lock exists), then `opam exec` - keeping the first that works.
-     * opam is only needed for that last fallback lookup, not by dune-release's own commands.
-     */
     checkDependencies() {
         core.startGroup('Checking dependencies');
         const usesDunePkg = this.executor.fileExists(path_1.default.join(this.context.workspace, 'dune.lock'));
@@ -30601,9 +30500,6 @@ class ReleaseManager {
         throw new Error('Missing required dependency: dune-release. Install it (opam install dune-release), ' +
             'install it as a dune dev tool (dune tools install dune-release), or put dune-release or opam on PATH.');
     }
-    /**
-     * Extract version from git tag
-     */
     extractVersion() {
         try {
             const tag = this.context.ref.replace('refs/tags/', '');
@@ -30619,15 +30515,11 @@ class ReleaseManager {
             throw new Error(`Could not extract version: ${error.message}`);
         }
     }
-    /**
-     * Configure Git for release operations
-     */
     configureGit() {
         core.startGroup('Configuring Git for release');
         try {
             this.exec('git config --global user.name "GitHub Actions"');
             this.exec('git config --global user.email "actions@github.com"');
-            // Configure git to use token for both HTTPS and SSH URLs
             const gitConfig = `https://x-access-token:${this.context.token}@github.com/`;
             this.exec(`git config --global url."${gitConfig}".insteadOf "https://github.com/"`);
             this.exec(`git config --global url."${gitConfig}".insteadOf "git@github.com:"`);
@@ -30639,9 +30531,6 @@ class ReleaseManager {
         }
         core.endGroup();
     }
-    /**
-     * Setup dune-release configuration
-     */
     setupDuneReleaseConfig(config) {
         core.startGroup('Setting up dune-release configuration');
         try {
@@ -30649,7 +30538,6 @@ class ReleaseManager {
             this.executor.mkdirSync(configDir, { recursive: true });
             const configContent = `user: ${config.user}\nremote: ${config.remote}\nlocal: ${config.local}\n`;
             this.executor.writeFile(path_1.default.join(configDir, 'release.yml'), configContent);
-            // Create GitHub token file with secure permissions
             const tokenPath = path_1.default.join(configDir, 'github.token');
             this.executor.writeFile(tokenPath, this.context.token, { mode: 0o600 });
             this.info(`GitHub token file created at ${tokenPath}`);
@@ -30661,29 +30549,19 @@ class ReleaseManager {
         }
         core.endGroup();
     }
-    /**
-     * Clone opam-repository from upstream (always latest state)
-     * dune-release will push to the fork URL from config
-     */
     cloneOpamRepository(localPath, opamRepository) {
         core.startGroup('Cloning opam-repository');
         const upstreamUrl = `https://github.com/${opamRepository.owner}/${opamRepository.repo}.git`;
-        // Create directory structure
         const gitDir = path_1.default.dirname(localPath);
         try {
             this.executor.mkdirSync(gitDir, { recursive: true });
         }
         catch (error) {
-            // Directory might already exist, that's fine
         }
-        // Clone upstream - always has the latest state
         this.exec(`git clone --depth 1 ${upstreamUrl} ${localPath}`);
         this.info(`Cloned ${upstreamUrl} to ${localPath}`);
         core.endGroup();
     }
-    /**
-     * Run dune-release commands
-     */
     runDuneRelease(command, args = []) {
         const fullCommand = `${this.duneReleasePrefix} ${command} ${args.join(' ')}`;
         this.exec(fullCommand);
@@ -30700,7 +30578,6 @@ class ReleaseManager {
     deleteTag() {
         const tagName = this.context.ref.replace('refs/tags/', '');
         this.info(`Attempting to delete tag ${tagName}`);
-        // Configure git with token for both HTTPS and SSH URLs
         const gitConfig = `https://x-access-token:${this.context.token}@github.com/`;
         this.exec(`git config --global url."${gitConfig}".insteadOf "https://github.com/"`, { silent: true });
         this.exec(`git config --global url."${gitConfig}".insteadOf "git@github.com:"`, { silent: true });
@@ -30734,9 +30611,6 @@ class ReleaseManager {
         }
         throw new Error(`Release failed - tag ${tagName} has been deleted. Please fix the issues and create a new tag.`);
     }
-    /**
-     * Run the full release pipeline
-     */
     async runRelease(packages, changelogPath, duneConfig, toGithubReleases, toOpamRepository, includeSubmodules = false, opamRepository = { owner: 'ocaml', repo: 'opam-repository' }, buildDir, publishMessage, preamble, dryRun = false, draft = false) {
         let versionChangelogPath = null;
         try {
@@ -30934,7 +30808,6 @@ class ReleaseManager {
                 }
                 if (toOpamRepository) {
                     core.notice(`Opam PR: ${opamPrUrl}`);
-                    // Create a commit with the release information
                     try {
                         core.startGroup('Creating release tracking commit');
                         let commitMessage = `release ${version}\n\n`;
@@ -30944,16 +30817,13 @@ class ReleaseManager {
                         if (toGithubReleases) {
                             commitMessage += `github release: ${githubReleaseUrl}\n`;
                         }
-                        // Check if we're on a branch (not detached HEAD)
                         const currentBranch = this.exec('git rev-parse --abbrev-ref HEAD', { silent: true });
                         if (currentBranch === 'HEAD') {
                             this.info('Running on detached HEAD (tag), skipping commit creation');
                         }
                         else {
-                            // Allow empty commit in case there are no changes
                             this.exec(`git commit --allow-empty -m "${commitMessage.trim()}"`);
                             this.info('Created commit with release information');
-                            // Push the commit to the repository
                             this.exec(`git push origin ${currentBranch}`);
                             this.info(`Pushed release tracking commit to ${currentBranch}`);
                         }
@@ -30961,14 +30831,12 @@ class ReleaseManager {
                     }
                     catch (error) {
                         core.warning(`Could not create or push release tracking commit: ${error.message}`);
-                        // Non-fatal, continue
                     }
                 }
             }
         }
         catch (error) {
             const errorMessage = error.message || error.toString();
-            // Check for specific error patterns and provide helpful messages
             if (errorMessage.includes('without `workflow` scope')) {
                 core.error('GitHub token is missing the "workflow" scope');
             }
@@ -31006,9 +30874,6 @@ class ReleaseManager {
     }
 }
 exports.ReleaseManager = ReleaseManager;
-/**
- * Check if an error is a GitHub authentication error and throw a helpful message
- */
 function handleAuthError(error, context = '') {
     const message = error.message || error.toString();
     const status = error.status || error.statusCode;
