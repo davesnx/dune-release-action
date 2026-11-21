@@ -71,7 +71,6 @@ export function parseChangelog(changelogPath: string): ChangelogEntry[] {
   }
 }
 
-// Strip 'v' prefix and trailing '.0' segments so 0.11 matches 0.11.0
 function normalizeVersion(version: string): string {
   return version.replace(/^v/, '').replace(/(?:\.0)+$/, '');
 }
@@ -138,7 +137,6 @@ export function validateChangelog(
       validation.errors.push(`Changelog entry for ${expectedVersion} is empty`);
     }
 
-    // Warn if content is very short (likely incomplete)
     if (versionEntry.content.trim().length < 20) {
       validation.warnings.push(
         `Changelog entry for ${expectedVersion} seems very short. ` +
@@ -154,9 +152,6 @@ export function validateChangelog(
   return validation;
 }
 
-/**
- * Extract version-specific changelog content and write to a temporary file
- */
 export function extractVersionChangelog(
   changelogPath: string,
   version: string,
@@ -175,7 +170,6 @@ export function extractVersionChangelog(
       throw new Error(`No changelog entry found for version ${version}`);
     }
 
-    // Write the version content to the output file
     const content = `## ${version}${versionEntry.date ? ` (${versionEntry.date})` : ''}\n\n${versionEntry.content}\n`;
     Fs.writeFileSync(outputPath, content, 'utf-8');
 
@@ -185,35 +179,23 @@ export function extractVersionChangelog(
   }
 }
 
-/**
- * Represents a commit entry to be added to the changelog
- */
 export interface CommitEntry {
   message: string;
-  author: string;        // GitHub username (handle)
+  author: string;
   prNumber?: number;
-  commitSha?: string;    // Short or full commit SHA
-  repoUrl?: string;      // e.g., "https://github.com/owner/repo"
+  commitSha?: string;
+  repoUrl?: string;
 }
 
-/**
- * Format a commit entry for the changelog
- * Format: "- {message} by @{author} ([#{prNumber}](url))"
- *      or "- {message} by @{author} ([sha](commit-url))" if no PR
- *      or "- {message} by @{author}" if no PR and no SHA
- */
 export function formatCommitEntry(entry: CommitEntry): string {
   const authorDisplay = entry.author.startsWith('@') ? entry.author : `@${entry.author}`;
 
   let linkSuffix = '';
   if (entry.prNumber && entry.repoUrl) {
-    // Link to PR
     linkSuffix = ` ([#${entry.prNumber}](${entry.repoUrl}/pull/${entry.prNumber}))`;
   } else if (entry.prNumber) {
-    // PR number without link
     linkSuffix = ` (#${entry.prNumber})`;
   } else if (entry.commitSha && entry.repoUrl) {
-    // Link to commit (short SHA display)
     const shortSha = entry.commitSha.substring(0, 7);
     linkSuffix = ` ([${shortSha}](${entry.repoUrl}/commit/${entry.commitSha}))`;
   }
@@ -221,16 +203,12 @@ export function formatCommitEntry(entry: CommitEntry): string {
   return `- ${entry.message} by ${authorDisplay}${linkSuffix}`;
 }
 
-/**
- * Check if an entry (by message) already exists in the changelog
- */
 export function isEntryInChangelog(changelogPath: string, message: string): boolean {
   try {
     if (!Fs.existsSync(changelogPath)) {
       return false;
     }
     const content = Fs.readFileSync(changelogPath, 'utf-8');
-    // Normalize whitespace for comparison
     const normalizedMessage = message.trim().toLowerCase();
     const normalizedContent = content.toLowerCase();
     return normalizedContent.includes(normalizedMessage);
@@ -239,9 +217,6 @@ export function isEntryInChangelog(changelogPath: string, message: string): bool
   }
 }
 
-/**
- * Read the raw changelog content, preserving the file structure
- */
 function readChangelogContent(changelogPath: string): string {
   if (!Fs.existsSync(changelogPath)) {
     return '';
@@ -249,16 +224,12 @@ function readChangelogContent(changelogPath: string): string {
   return Fs.readFileSync(changelogPath, 'utf-8');
 }
 
-/**
- * Find the position and match of the unreleased header in the content
- */
 function findUnreleasedSection(content: string, unreleasedHeader: string): {
   headerStart: number;
   headerEnd: number;
   contentStart: number;
   contentEnd: number;
 } | null {
-  // Find the unreleased header (case-insensitive)
   const headerRegex = new RegExp(`^${escapeRegex(unreleasedHeader)}\\s*$`, 'mi');
   const headerMatch = content.match(headerRegex);
 
@@ -269,7 +240,6 @@ function findUnreleasedSection(content: string, unreleasedHeader: string): {
   const headerStart = headerMatch.index;
   const headerEnd = headerStart + headerMatch[0].length;
 
-  // Find where the content ends (next ## header or end of file)
   const nextHeaderRegex = /^##\s+/m;
   const afterHeader = content.slice(headerEnd);
   const nextHeaderMatch = afterHeader.match(nextHeaderRegex);
@@ -286,17 +256,10 @@ function findUnreleasedSection(content: string, unreleasedHeader: string): {
   };
 }
 
-/**
- * Escape special regex characters in a string
- */
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/**
- * Add entries to the Unreleased section of the changelog
- * Creates the section if it doesn't exist
- */
 export function addToUnreleased(
   changelogPath: string,
   entries: CommitEntry[],
@@ -309,50 +272,34 @@ export function addToUnreleased(
   let content = readChangelogContent(changelogPath);
   const formattedEntries = entries.map(formatCommitEntry).join('\n');
 
-  // Find existing unreleased section
   const unreleasedSection = findUnreleasedSection(content, unreleasedHeader);
 
   if (unreleasedSection) {
-    // Get content before the unreleased header (title etc)
     const beforeHeader = content.slice(0, unreleasedSection.headerStart).trimEnd();
 
-    // Get existing entries in unreleased section
     const existingContent = content.slice(unreleasedSection.contentStart, unreleasedSection.contentEnd).trim();
 
-    // Get content after unreleased section (version sections)
     const afterContent = content.slice(unreleasedSection.contentEnd).trim();
 
-    // Build entries block: new entries first, then existing
     const entriesBlock = existingContent
       ? `${formattedEntries}\n${existingContent}`
       : formattedEntries;
 
-    // Rebuild with consistent spacing:
-    // - blank line after title
-    // - header
-    // - blank line after header
-    // - entries
-    // - blank line before next section
     const parts = [beforeHeader, '', unreleasedHeader, '', entriesBlock];
     if (afterContent) {
       parts.push('', afterContent);
     }
     content = parts.join('\n') + '\n';
   } else {
-    // No unreleased section exists - create one
-    // Check if there's a title line (# Changelog or similar)
     const titleMatch = content.match(/^#\s+[^\n]+\n/);
 
     if (titleMatch) {
-      // Insert after the title
       const afterTitle = titleMatch[0].length;
       const newSection = `\n${unreleasedHeader}\n\n${formattedEntries}\n`;
       content = content.slice(0, afterTitle) + newSection + content.slice(afterTitle);
     } else if (content.trim() === '') {
-      // Empty file - create with title and unreleased section
       content = `# Changelog\n\n${unreleasedHeader}\n\n${formattedEntries}\n`;
     } else {
-      // No title, prepend unreleased section
       content = `${unreleasedHeader}\n\n${formattedEntries}\n\n${content}`;
     }
   }
@@ -360,10 +307,6 @@ export function addToUnreleased(
   Fs.writeFileSync(changelogPath, content, 'utf-8');
 }
 
-/**
- * Promote the Unreleased section to a versioned section
- * Moves all content from Unreleased to a new version header and creates a fresh Unreleased section
- */
 export function promoteUnreleasedToVersion(
   changelogPath: string,
   version: string,
@@ -382,7 +325,6 @@ export function promoteUnreleasedToVersion(
     throw new Error(`Unreleased section not found in changelog (looking for "${unreleasedHeader}")`);
   }
 
-  // Extract the unreleased content
   const unreleasedContent = content
     .slice(unreleasedSection.contentStart, unreleasedSection.contentEnd)
     .trim();
@@ -391,20 +333,12 @@ export function promoteUnreleasedToVersion(
     throw new Error('Unreleased section is empty - nothing to promote');
   }
 
-  // Build the new version section
   const normalizedVersion = version.startsWith('v') ? version : `v${version}`;
   const versionHeader = `## ${normalizedVersion} (${date})`;
-
-  // Build the new content:
-  // 1. Everything before unreleased header
-  // 2. Fresh unreleased section
-  // 3. New version section with the old unreleased content
-  // 4. Everything after the old unreleased content
 
   const beforeUnreleased = content.slice(0, unreleasedSection.headerStart);
   const afterUnreleased = content.slice(unreleasedSection.contentEnd);
 
-  // Build with proper spacing between sections
   const parts = [
     beforeUnreleased.trimEnd(),
     '',
@@ -415,22 +349,18 @@ export function promoteUnreleasedToVersion(
     unreleasedContent
   ];
 
-  // Add trailing content with proper separation
   const trimmedAfter = afterUnreleased.trimStart();
   if (trimmedAfter) {
-    parts.push('');  // Blank line before next section
+    parts.push('');
     parts.push(trimmedAfter);
   } else {
-    parts.push('');  // Ensure file ends with newline
+    parts.push('');
   }
 
   const newContent = parts.join('\n');
   Fs.writeFileSync(changelogPath, newContent, 'utf-8');
 }
 
-/**
- * Get the content of the Unreleased section
- */
 export function getUnreleasedContent(
   changelogPath: string,
   unreleasedHeader: string = '## Unreleased'
@@ -450,9 +380,6 @@ export function getUnreleasedContent(
   return content.slice(unreleasedSection.contentStart, unreleasedSection.contentEnd).trim();
 }
 
-/**
- * Check if a version exists in the changelog
- */
 export function hasVersion(changelogPath: string, version: string): boolean {
   try {
     const entries = parseChangelog(changelogPath);
@@ -467,9 +394,6 @@ export function hasVersion(changelogPath: string, version: string): boolean {
   }
 }
 
-/**
- * Get all versions in the changelog
- */
 export function getVersions(changelogPath: string): string[] {
   try {
     const entries = parseChangelog(changelogPath);
@@ -481,10 +405,6 @@ export function getVersions(changelogPath: string): string[] {
   }
 }
 
-/**
- * Add a version section to the changelog (for backfilling)
- * Inserts the version in chronological order (newer versions at top)
- */
 export function addVersionSection(
   changelogPath: string,
   version: string,
@@ -500,41 +420,31 @@ export function addVersionSection(
     ? entries.map(formatCommitEntry).join('\n')
     : '- Initial release';
 
-  // Version section with proper spacing (blank line after entries)
   const versionSection = `${versionHeader}\n\n${formattedEntries}`;
 
   if (!content.trim()) {
-    // Empty file - create with title, unreleased, and version
     content = `# Changelog\n\n${unreleasedHeader}\n\n${versionSection}\n`;
     Fs.writeFileSync(changelogPath, content, 'utf-8');
     return;
   }
 
-  // Find the unreleased section
   const unreleasedSection = findUnreleasedSection(content, unreleasedHeader);
 
   if (unreleasedSection) {
-    // Get content before unreleased header
     const beforeHeader = content.slice(0, unreleasedSection.headerStart).trimEnd();
 
-    // Get unreleased section content
     const unreleasedContent = content.slice(unreleasedSection.contentStart, unreleasedSection.contentEnd).trim();
 
-    // Get content after unreleased section (existing versions)
     const afterUnreleased = content.slice(unreleasedSection.contentEnd).trim();
 
-    // Rebuild with consistent spacing
     const parts = [beforeHeader, '', unreleasedHeader];
 
-    // Add unreleased content if any
     if (unreleasedContent) {
       parts.push('', unreleasedContent);
     }
 
-    // Add new version section
     parts.push('', versionSection);
 
-    // Add existing versions if any
     if (afterUnreleased) {
       parts.push('', afterUnreleased);
     }
@@ -542,7 +452,6 @@ export function addVersionSection(
     const newContent = parts.join('\n') + '\n';
     Fs.writeFileSync(changelogPath, newContent, 'utf-8');
   } else {
-    // No unreleased section - check for title
     const titleMatch = content.match(/^#\s+[^\n]+\n/);
 
     if (titleMatch) {
@@ -550,7 +459,6 @@ export function addVersionSection(
       const newContent = content.slice(0, afterTitle) + '\n' + unreleasedHeader + '\n\n' + versionSection + '\n\n' + content.slice(afterTitle);
       Fs.writeFileSync(changelogPath, newContent, 'utf-8');
     } else {
-      // No title - prepend everything
       content = `# Changelog\n\n${unreleasedHeader}\n\n${versionSection}\n\n${content}`;
       Fs.writeFileSync(changelogPath, content, 'utf-8');
     }

@@ -111,18 +111,12 @@ export class ReleaseManager {
     this.executor = executor;
   }
 
-  /**
-   * Conditional info logging - only logs if verbose mode is enabled
-   */
   private info(message: string): void {
     if (this.verbose) {
       core.info(message);
     }
   }
 
-  /**
-   * Execute a command and return its output
-   */
   private exec(command: string, options: { silent?: boolean } = {}): string {
     if (!options.silent) {
       this.info(`> ${command}`);
@@ -137,9 +131,6 @@ export class ReleaseManager {
     }
   }
 
-  /**
-   * Validate that the tag is new and doesn't exist on remote
-   */
   private validateNewTag(): void {
     core.startGroup('Validating tag');
 
@@ -163,10 +154,6 @@ export class ReleaseManager {
     core.endGroup();
   }
 
-  /**
-   * Try dune-release directly, then `dune tools exec` (if dune.lock exists), then `opam exec` - keeping the first that works.
-   * opam is only needed for that last fallback lookup, not by dune-release's own commands.
-   */
   private checkDependencies(): void {
     core.startGroup('Checking dependencies');
 
@@ -196,9 +183,6 @@ export class ReleaseManager {
     );
   }
 
-  /**
-   * Extract version from git tag
-   */
   private extractVersion(): string {
     try {
       const tag = this.context.ref.replace('refs/tags/', '');
@@ -214,9 +198,6 @@ export class ReleaseManager {
     }
   }
 
-  /**
-   * Configure Git for release operations
-   */
   private configureGit(): void {
     core.startGroup('Configuring Git for release');
 
@@ -224,7 +205,6 @@ export class ReleaseManager {
       this.exec('git config --global user.name "GitHub Actions"');
       this.exec('git config --global user.email "actions@github.com"');
 
-      // Configure git to use token for both HTTPS and SSH URLs
       const gitConfig = `https://x-access-token:${this.context.token}@github.com/`;
       this.exec(`git config --global url."${gitConfig}".insteadOf "https://github.com/"`);
       this.exec(`git config --global url."${gitConfig}".insteadOf "git@github.com:"`);
@@ -238,9 +218,6 @@ export class ReleaseManager {
     core.endGroup();
   }
 
-  /**
-   * Setup dune-release configuration
-   */
   private setupDuneReleaseConfig(config: ReleaseConfig): void {
     core.startGroup('Setting up dune-release configuration');
 
@@ -252,7 +229,6 @@ export class ReleaseManager {
 
       this.executor.writeFile(Path.join(configDir, 'release.yml'), configContent);
 
-      // Create GitHub token file with secure permissions
       const tokenPath = Path.join(configDir, 'github.token');
       this.executor.writeFile(tokenPath, this.context.token, { mode: 0o600 });
       this.info(`GitHub token file created at ${tokenPath}`);
@@ -266,33 +242,23 @@ export class ReleaseManager {
     core.endGroup();
   }
 
-  /**
-   * Clone opam-repository from upstream (always latest state)
-   * dune-release will push to the fork URL from config
-   */
   private cloneOpamRepository(localPath: string, opamRepository: OpamRepository): void {
     core.startGroup('Cloning opam-repository');
 
     const upstreamUrl = `https://github.com/${opamRepository.owner}/${opamRepository.repo}.git`;
 
-    // Create directory structure
     const gitDir = Path.dirname(localPath);
     try {
       this.executor.mkdirSync(gitDir, { recursive: true });
     } catch (error: any) {
-      // Directory might already exist, that's fine
     }
 
-    // Clone upstream - always has the latest state
     this.exec(`git clone --depth 1 ${upstreamUrl} ${localPath}`);
     this.info(`Cloned ${upstreamUrl} to ${localPath}`);
 
     core.endGroup();
   }
 
-  /**
-   * Run dune-release commands
-   */
   private runDuneRelease(command: string, args: string[] = []): void {
     const fullCommand = `${this.duneReleasePrefix} ${command} ${args.join(' ')}`;
     this.exec(fullCommand);
@@ -313,7 +279,6 @@ export class ReleaseManager {
     const tagName = this.context.ref.replace('refs/tags/', '');
     this.info(`Attempting to delete tag ${tagName}`);
 
-    // Configure git with token for both HTTPS and SSH URLs
     const gitConfig = `https://x-access-token:${this.context.token}@github.com/`;
     this.exec(`git config --global url."${gitConfig}".insteadOf "https://github.com/"`, { silent: true });
     this.exec(`git config --global url."${gitConfig}".insteadOf "git@github.com:"`, { silent: true });
@@ -349,9 +314,6 @@ export class ReleaseManager {
     throw new Error(`Release failed - tag ${tagName} has been deleted. Please fix the issues and create a new tag.`);
   }
 
-  /**
-   * Run the full release pipeline
-   */
   async runRelease(
     packages: string,
     changelogPath: string | null,
@@ -576,7 +538,6 @@ export class ReleaseManager {
         if (toOpamRepository) {
           core.notice(`Opam PR: ${opamPrUrl}`);
 
-          // Create a commit with the release information
           try {
             core.startGroup('Creating release tracking commit');
 
@@ -588,17 +549,14 @@ export class ReleaseManager {
               commitMessage += `github release: ${githubReleaseUrl}\n`;
             }
 
-            // Check if we're on a branch (not detached HEAD)
             const currentBranch = this.exec('git rev-parse --abbrev-ref HEAD', { silent: true });
 
             if (currentBranch === 'HEAD') {
               this.info('Running on detached HEAD (tag), skipping commit creation');
             } else {
-              // Allow empty commit in case there are no changes
               this.exec(`git commit --allow-empty -m "${commitMessage.trim()}"`);
               this.info('Created commit with release information');
 
-              // Push the commit to the repository
               this.exec(`git push origin ${currentBranch}`);
               this.info(`Pushed release tracking commit to ${currentBranch}`);
             }
@@ -606,7 +564,6 @@ export class ReleaseManager {
             core.endGroup();
           } catch (error: any) {
             core.warning(`Could not create or push release tracking commit: ${error.message}`);
-            // Non-fatal, continue
           }
         }
       }
@@ -614,7 +571,6 @@ export class ReleaseManager {
     } catch (error: any) {
       const errorMessage = error.message || error.toString();
 
-      // Check for specific error patterns and provide helpful messages
       if (errorMessage.includes('without `workflow` scope')) {
         core.error('GitHub token is missing the "workflow" scope');
       } else if (errorMessage.includes('Permission to') && errorMessage.includes('denied')) {
@@ -648,9 +604,6 @@ export class ReleaseManager {
   }
 }
 
-/**
- * Check if an error is a GitHub authentication error and throw a helpful message
- */
 function handleAuthError(error: any, context: string = ''): never {
   const message = error.message || error.toString();
   const status = error.status || error.statusCode;

@@ -5,7 +5,6 @@ import Fs from 'fs';
 import Path from 'path';
 import { DEFAULT_CHANGELOG_PATH } from './main';
 
-// Mock executor for testing
 function createMockExecutor(overrides: Partial<{
   execResults: Map<string, string>;
   execErrors: Map<string, Error>;
@@ -33,14 +32,12 @@ function createMockExecutor(overrides: Partial<{
     exec(command: string, _options?: { silent?: boolean }): string {
       mock.commands.push(command);
 
-      // Check for specific error responses
       for (const [pattern, error] of execErrors) {
         if (command.includes(pattern)) {
           throw error;
         }
       }
 
-      // Check for specific success responses
       for (const [pattern, result] of execResults) {
         if (command.includes(pattern)) {
           return result;
@@ -89,11 +86,6 @@ function createMockExecutor(overrides: Partial<{
   return mock;
 }
 
-// createMockExecutor matches commands with command.includes(pattern), which can't fail
-// one candidate without also failing another that contains it as a substring (e.g.
-// 'opam exec -- dune-release --version' contains 'dune-release --version'), so
-// dependency-resolution tests match commands exactly instead. `commands` is passed in
-// so a throwing call still leaves the caller with everything recorded up to the failure.
 function createExactMatchExecutor(opts: { failing: string[]; duneLock?: boolean }, commands: string[] = []): Executor {
   return {
     exec(command: string): string {
@@ -132,10 +124,6 @@ function createTestConfig(overrides: Partial<ReleaseConfig> = {}): ReleaseConfig
   };
 }
 
-// ============================================================================
-// ReleaseManager Constructor Tests
-// ============================================================================
-
 describe('ReleaseManager', () => {
   describe('constructor', () => {
     test('creates instance with default executor', () => {
@@ -160,10 +148,6 @@ describe('ReleaseManager', () => {
   });
 });
 
-// ============================================================================
-// Version Extraction Tests
-// ============================================================================
-
 describe('Version extraction', () => {
   test('extracts version from tag ref', async () => {
     const mockExecutor = createMockExecutor({
@@ -178,8 +162,6 @@ describe('Version extraction', () => {
     const context = createTestContext({ ref: 'refs/tags/v1.2.3' });
     const manager = new ReleaseManager(context, false, mockExecutor);
 
-    // We can't directly test extractVersion since it's private,
-    // but we can verify the ref is correctly stored
     assert.strictEqual(context.ref, 'refs/tags/v1.2.3');
   });
 
@@ -196,10 +178,6 @@ describe('Version extraction', () => {
   });
 });
 
-// ============================================================================
-// Git Configuration Tests
-// ============================================================================
-
 describe('Git configuration', () => {
   test('configures git user and token', async () => {
     const mockExecutor = createMockExecutor({
@@ -214,15 +192,10 @@ describe('Git configuration', () => {
     const context = createTestContext();
     const _manager = new ReleaseManager(context, false, mockExecutor);
 
-    // Verify the git config commands will use the token
     const gitConfigUrl = `https://x-access-token:${context.token}@github.com/`;
     assert.ok(gitConfigUrl.includes(context.token));
   });
 });
-
-// ============================================================================
-// Dune-release Config Setup Tests
-// ============================================================================
 
 describe('Dune-release config setup', () => {
   test('config content format is correct', () => {
@@ -238,10 +211,6 @@ local: ${config.local}
   });
 });
 
-// ============================================================================
-// Dependency Check Tests
-// ============================================================================
-
 describe('Dependency checks', () => {
   test('dependencies list includes opam and dune-release', () => {
     const expectedDeps = ['opam', 'dune-release'];
@@ -249,10 +218,6 @@ describe('Dependency checks', () => {
     assert.ok(expectedDeps.includes('dune-release'));
   });
 });
-
-// ============================================================================
-// Tag Validation Tests
-// ============================================================================
 
 describe('Tag validation', () => {
   test('parses tag name from ref correctly', () => {
@@ -273,10 +238,6 @@ describe('Tag validation', () => {
     assert.strictEqual(tagExists, false);
   });
 });
-
-// ============================================================================
-// Executor Mock Tests
-// ============================================================================
 
 describe('Mock executor', () => {
   test('tracks executed commands', () => {
@@ -384,10 +345,6 @@ describe('Mock executor', () => {
   });
 });
 
-// ============================================================================
-// URL Construction Tests
-// ============================================================================
-
 describe('URL construction', () => {
   test('constructs GitHub release URL correctly', () => {
     const repository = 'davesnx/dune-release-action';
@@ -421,10 +378,6 @@ describe('URL construction', () => {
   });
 });
 
-// ============================================================================
-// Dry-run Mode Tests
-// ============================================================================
-
 describe('Dry-run mode', () => {
   test('dry-run flag is parsed correctly', () => {
     const dryRunInput: string = 'true';
@@ -444,10 +397,6 @@ describe('Dry-run mode', () => {
     assert.strictEqual(dryRun, false);
   });
 });
-
-// ============================================================================
-// Opam PR Message Tests
-// ============================================================================
 
 describe('Opam PR message', () => {
   test('composes preamble with changelog content', () => {
@@ -475,10 +424,6 @@ describe('Opam PR message', () => {
     assert.strictEqual(shellQuote('line "one"\nline two'), "'line \"one\"\nline two'");
   });
 });
-
-// ============================================================================
-// Draft Mode Tests
-// ============================================================================
 
 describe('Draft mode', () => {
   async function runReleaseWith(draft: boolean): Promise<string[]> {
@@ -513,10 +458,6 @@ describe('Draft mode', () => {
     assert.ok(!findCommand(commands, 'opam submit').includes('--draft'));
   });
 });
-
-// ============================================================================
-// Lint Mode Tests
-// ============================================================================
 
 describe('Lint mode', () => {
   test('runLint succeeds without tag or token, running dune-release directly', () => {
@@ -627,10 +568,6 @@ describe('Lint mode', () => {
   });
 });
 
-// ============================================================================
-// Package Input Parsing Tests
-// ============================================================================
-
 describe('Package input parsing', () => {
   test('defaults changelog path to CHANGES.md', () => {
     assert.strictEqual(DEFAULT_CHANGELOG_PATH, './CHANGES.md');
@@ -664,10 +601,6 @@ describe('Package input parsing', () => {
   });
 });
 
-// ============================================================================
-// Opam Repository Input Parsing Tests
-// ============================================================================
-
 describe('Opam repository input parsing', () => {
   test('parses owner/repo format', () => {
     const opamRepositoryInput = 'ocaml/opam-repository';
@@ -689,14 +622,9 @@ describe('Opam repository input parsing', () => {
     const opamRepositoryInput = 'invalid-format';
     const [opamOwner, opamRepo] = opamRepositoryInput.split('/');
 
-    // This should be detected as invalid
     assert.ok(!opamOwner || !opamRepo || opamRepo === undefined);
   });
 });
-
-// ============================================================================
-// Action Metadata Tests
-// ============================================================================
 
 describe('Action metadata', () => {
   test('declares the changelog input default', () => {
@@ -712,10 +640,6 @@ describe('Action metadata', () => {
     assert.match(actionYml, /\n  draft:\n(?: {4}.*\n)*? {4}default: 'false'\n/);
   });
 });
-
-// ============================================================================
-// Error Message Patterns Tests
-// ============================================================================
 
 describe('Error message detection', () => {
   test('detects workflow scope error', () => {

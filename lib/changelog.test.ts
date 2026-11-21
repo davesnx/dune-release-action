@@ -18,7 +18,6 @@ import Fs from 'fs';
 import Path from 'path';
 import OS from 'os';
 
-// Test utilities
 let testFileCounter = 0;
 const testFiles: string[] = [];
 
@@ -36,15 +35,10 @@ function cleanupTestFiles(): void {
         Fs.unlinkSync(file);
       }
     } catch {
-      // Ignore cleanup errors
     }
   }
   testFiles.length = 0;
 }
-
-// ============================================================================
-// parseChangelog Tests
-// ============================================================================
 
 describe('parseChangelog', () => {
   afterEach(cleanupTestFiles);
@@ -165,7 +159,6 @@ describe('parseChangelog', () => {
 
     assert.strictEqual(entries.length, 4);
     assert.strictEqual(entries[0].date, '2025-12-31');
-    // Other date formats might not parse correctly, which is expected
     assert.strictEqual(entries[3].date, undefined);
   });
 
@@ -237,7 +230,6 @@ This is a changelog for my project.
 - Extra spaces
 `);
     const entries = parseChangelog(testFile);
-    // Should parse what it can, even if some are malformed
     assert.ok(entries.length >= 0);
   });
 
@@ -338,10 +330,6 @@ This is a changelog for my project.
     assert.strictEqual(entries[99].version, '1.0.0');
   });
 });
-
-// ============================================================================
-// validateChangelog Tests
-// ============================================================================
 
 describe('validateChangelog', () => {
   afterEach(cleanupTestFiles);
@@ -471,7 +459,6 @@ describe('validateChangelog', () => {
     const testFile = createTestFile(`# 0.11
 - Support for OCaml 5.4
 `);
-    // Tag is v0.11.0, changelog has 0.11 - should match
     const validation = validateChangelog(testFile, 'v0.11.0');
 
     assert.strictEqual(validation.valid, true);
@@ -482,7 +469,6 @@ describe('validateChangelog', () => {
     const testFile = createTestFile(`## 0.11.0
 - Support for OCaml 5.4
 `);
-    // Tag is 0.11, changelog has 0.11.0 - should match
     const validation = validateChangelog(testFile, '0.11');
 
     assert.strictEqual(validation.valid, true);
@@ -515,10 +501,6 @@ describe('validateChangelog', () => {
     assert.strictEqual(validation.hasUnreleased, true);
   });
 });
-
-// ============================================================================
-// extractVersionChangelog Tests
-// ============================================================================
 
 describe('extractVersionChangelog', () => {
   afterEach(cleanupTestFiles);
@@ -618,10 +600,6 @@ describe('extractVersionChangelog', () => {
     assert.ok(!extracted.includes('First release'));
   });
 });
-
-// ============================================================================
-// formatCommitEntry Tests
-// ============================================================================
 
 describe('formatCommitEntry', () => {
   test('formats entry with PR number and repo URL', () => {
@@ -744,10 +722,6 @@ describe('formatCommitEntry', () => {
   });
 });
 
-// ============================================================================
-// isEntryInChangelog Tests
-// ============================================================================
-
 describe('isEntryInChangelog', () => {
   afterEach(cleanupTestFiles);
 
@@ -776,9 +750,7 @@ describe('isEntryInChangelog', () => {
 
 - Add New Feature by davesnx
 `);
-    // Exact match should work
     assert.strictEqual(isEntryInChangelog(testFile, 'Add New Feature'), true);
-    // Different case should also match (case-insensitive for better UX)
     assert.strictEqual(isEntryInChangelog(testFile, 'add new feature'), true);
     assert.strictEqual(isEntryInChangelog(testFile, 'ADD NEW FEATURE'), true);
   });
@@ -788,7 +760,6 @@ describe('isEntryInChangelog', () => {
 
 - feat(api): Add new endpoint for users by davesnx (#123)
 `);
-    // Should find by the main message part
     assert.strictEqual(isEntryInChangelog(testFile, 'Add new endpoint for users'), true);
   });
 
@@ -816,10 +787,6 @@ describe('isEntryInChangelog', () => {
     assert.strictEqual(isEntryInChangelog(testFile, 'a.b.c'), true);
   });
 });
-
-// ============================================================================
-// addToUnreleased Tests
-// ============================================================================
 
 describe('addToUnreleased', () => {
   afterEach(cleanupTestFiles);
@@ -861,7 +828,6 @@ describe('addToUnreleased', () => {
     const testFile = Path.join(OS.tmpdir(), `nonexistent-${Date.now()}.md`);
     testFiles.push(testFile);
 
-    // Ensure file doesn't exist
     if (Fs.existsSync(testFile)) {
       Fs.unlinkSync(testFile);
     }
@@ -907,7 +873,6 @@ describe('addToUnreleased', () => {
     assert.ok(result.includes('Feature A'));
     assert.ok(result.includes('Feature B'));
     assert.ok(result.includes('Feature C'));
-    // Should maintain order
     const indexA = result.indexOf('Feature A');
     const indexB = result.indexOf('Feature B');
     const indexC = result.indexOf('Feature C');
@@ -925,7 +890,6 @@ describe('addToUnreleased', () => {
 
 - Old
 `);
-    // Add entries multiple times
     addToUnreleased(testFile, [{ message: 'First', author: 'a' }]);
     addToUnreleased(testFile, [{ message: 'Second', author: 'b' }]);
     addToUnreleased(testFile, [{ message: 'Third', author: 'c' }]);
@@ -933,7 +897,6 @@ describe('addToUnreleased', () => {
     const result = Fs.readFileSync(testFile, 'utf-8');
     const lines = result.split('\n');
 
-    // Count consecutive blank lines - should never have more than 1
     let maxConsecutiveBlanks = 0;
     let currentBlanks = 0;
     for (const line of lines) {
@@ -1000,10 +963,6 @@ Footer content
   });
 });
 
-// ============================================================================
-// promoteUnreleasedToVersion Tests
-// ============================================================================
-
 describe('promoteUnreleasedToVersion', () => {
   afterEach(cleanupTestFiles);
 
@@ -1023,15 +982,12 @@ describe('promoteUnreleasedToVersion', () => {
 
     const result = Fs.readFileSync(testFile, 'utf-8');
 
-    // Should have fresh unreleased section
     assert.ok(result.includes('## Unreleased'));
 
-    // Should have new version section with old unreleased content
     assert.ok(result.includes('## v1.1.0 (2025-01-15)'));
     assert.ok(result.includes('- New feature by davesnx (#42)'));
     assert.ok(result.includes('- Bug fix by someone (#43)'));
 
-    // Old version should still be there
     assert.ok(result.includes('## v1.0.0'));
   });
 
@@ -1119,10 +1075,6 @@ describe('promoteUnreleasedToVersion', () => {
   });
 });
 
-// ============================================================================
-// getUnreleasedContent Tests
-// ============================================================================
-
 describe('getUnreleasedContent', () => {
   afterEach(cleanupTestFiles);
 
@@ -1166,7 +1118,6 @@ describe('getUnreleasedContent', () => {
 - Feature
 `);
     const unreleased = getUnreleasedContent(testFile);
-    // Might return empty string or null for empty section
     assert.ok(unreleased === null || unreleased?.trim() === '');
   });
 
@@ -1183,10 +1134,6 @@ describe('getUnreleasedContent', () => {
     assert.ok(unreleased?.includes('Feature'));
   });
 });
-
-// ============================================================================
-// hasVersion Tests
-// ============================================================================
 
 describe('hasVersion', () => {
   afterEach(cleanupTestFiles);
@@ -1236,10 +1183,6 @@ describe('hasVersion', () => {
     assert.strictEqual(hasVersion(testFile, '1.0.1'), false);
   });
 });
-
-// ============================================================================
-// getVersions Tests
-// ============================================================================
 
 describe('getVersions', () => {
   afterEach(cleanupTestFiles);
@@ -1296,10 +1239,6 @@ describe('getVersions', () => {
   });
 });
 
-// ============================================================================
-// addVersionSection Tests
-// ============================================================================
-
 describe('addVersionSection', () => {
   afterEach(cleanupTestFiles);
 
@@ -1322,7 +1261,6 @@ describe('addVersionSection', () => {
     assert.ok(result.includes('## v1.5.0 (2025-06-15)'));
     assert.ok(result.includes('- Middle feature by @user'));
 
-    // Check order
     const unreleasedIndex = result.indexOf('## Unreleased');
     const v15Index = result.indexOf('## v1.5.0');
     const v10Index = result.indexOf('## v1.0.0');
@@ -1352,10 +1290,8 @@ describe('addVersionSection', () => {
 
 - Old
 `);
-    // Should not throw, but might not add section with empty entries
     addVersionSection(testFile, 'v1.5.0', '2025-01-01', []);
 
-    // File should still be valid
     const result = Fs.readFileSync(testFile, 'utf-8');
     assert.ok(result.includes('## v1.0.0'));
   });
@@ -1391,7 +1327,6 @@ describe('addVersionSection', () => {
     const result = Fs.readFileSync(testFile, 'utf-8');
     const lines = result.split('\n');
 
-    // Count consecutive blank lines
     let maxConsecutiveBlanks = 0;
     let currentBlanks = 0;
     for (const line of lines) {
@@ -1405,10 +1340,6 @@ describe('addVersionSection', () => {
     assert.ok(maxConsecutiveBlanks <= 1, `Found ${maxConsecutiveBlanks} consecutive blank lines`);
   });
 });
-
-// ============================================================================
-// Edge Cases and Error Handling
-// ============================================================================
 
 describe('Edge Cases and Error Handling', () => {
   afterEach(cleanupTestFiles);
@@ -1429,7 +1360,6 @@ describe('Edge Cases and Error Handling', () => {
     const content = '# Changelog\n\r\n## Unreleased\r\n\n- Feature\n';
     const testFile = createTestFile(content);
 
-    // Should not crash
     const entries = parseChangelog(testFile);
     assert.ok(Array.isArray(entries));
   });
@@ -1469,7 +1399,6 @@ describe('Edge Cases and Error Handling', () => {
 - Now compatible with React v18.0.0
 `);
     const entries = parseChangelog(testFile);
-    // Should only parse the header as a version, not the content
     assert.strictEqual(entries.length, 1);
     assert.strictEqual(entries[0].version, '1.0.0');
   });
@@ -1491,13 +1420,11 @@ describe('Edge Cases and Error Handling', () => {
 
 ## Unreleased
 `);
-    // Rapidly add entries
     for (let i = 0; i < 10; i++) {
       addToUnreleased(testFile, [{ message: `Feature ${i}`, author: 'user', prNumber: i }]);
     }
 
     const result = Fs.readFileSync(testFile, 'utf-8');
-    // All entries should be present
     for (let i = 0; i < 10; i++) {
       assert.ok(result.includes(`Feature ${i}`), `Missing Feature ${i}`);
     }
@@ -1510,7 +1437,6 @@ Just some random text
 
 Some content here
 `);
-    // Should not crash
     const entries = parseChangelog(testFile);
     const validation = validateChangelog(testFile, '1.0.0');
 
@@ -1529,10 +1455,6 @@ Some content here
   });
 });
 
-// ============================================================================
-// Integration Tests
-// ============================================================================
-
 describe('Integration Tests', () => {
   afterEach(cleanupTestFiles);
 
@@ -1540,7 +1462,6 @@ describe('Integration Tests', () => {
     const testFile = Path.join(OS.tmpdir(), `integration-${Date.now()}.md`);
     testFiles.push(testFile);
 
-    // Step 1: Create changelog with initial entries
     addToUnreleased(testFile, [
       { message: 'Initial feature', author: 'alice', prNumber: 1 },
       { message: 'Another feature', author: 'bob', prNumber: 2 }
@@ -1551,14 +1472,12 @@ describe('Integration Tests', () => {
     assert.ok(result.includes('## Unreleased'));
     assert.ok(result.includes('Initial feature'));
 
-    // Step 2: Promote to v1.0.0
     promoteUnreleasedToVersion(testFile, 'v1.0.0', '2025-01-01');
 
     result = Fs.readFileSync(testFile, 'utf-8');
     assert.ok(result.includes('## v1.0.0 (2025-01-01)'));
     assert.ok(result.includes('Initial feature'));
 
-    // Step 3: Add more entries
     addToUnreleased(testFile, [
       { message: 'Post-release fix', author: 'charlie', prNumber: 3 }
     ]);
@@ -1566,19 +1485,16 @@ describe('Integration Tests', () => {
     result = Fs.readFileSync(testFile, 'utf-8');
     assert.ok(result.includes('Post-release fix'));
 
-    // Step 4: Promote to v1.1.0
     promoteUnreleasedToVersion(testFile, 'v1.1.0', '2025-02-01');
 
     result = Fs.readFileSync(testFile, 'utf-8');
     assert.ok(result.includes('## v1.1.0 (2025-02-01)'));
     assert.ok(result.includes('## v1.0.0 (2025-01-01)'));
 
-    // Verify order
     const v11Index = result.indexOf('## v1.1.0');
     const v10Index = result.indexOf('## v1.0.0');
     assert.ok(v11Index < v10Index);
 
-    // Step 5: Validate both versions
     const v10Validation = validateChangelog(testFile, '1.0.0');
     const v11Validation = validateChangelog(testFile, '1.1.0');
 
@@ -1599,19 +1515,16 @@ describe('Integration Tests', () => {
 
 - Initial release
 `);
-    // Backfill v1.5.0 that was missed
     addVersionSection(testFile, 'v1.5.0', '2025-02-01', [
       { message: 'Backfilled feature', author: 'user' }
     ]);
 
     const result = Fs.readFileSync(testFile, 'utf-8');
 
-    // All versions should be present
     assert.ok(result.includes('## v2.0.0'));
     assert.ok(result.includes('## v1.5.0'));
     assert.ok(result.includes('## v1.0.0'));
 
-    // Check all versions are tracked
     const versions = getVersions(testFile);
     assert.ok(versions.includes('2.0.0'));
     assert.ok(versions.includes('1.5.0'));
@@ -1635,18 +1548,15 @@ A great project changelog.
 `);
     const originalContent = Fs.readFileSync(testFile, 'utf-8');
 
-    // Perform various operations
     addToUnreleased(testFile, [{ message: 'New', author: 'user' }]);
     promoteUnreleasedToVersion(testFile, 'v1.1.0', '2025-02-01');
     addToUnreleased(testFile, [{ message: 'Another', author: 'user' }]);
 
     const finalContent = Fs.readFileSync(testFile, 'utf-8');
 
-    // Original title and description should be preserved
     assert.ok(finalContent.includes('# My Project'));
     assert.ok(finalContent.includes('A great project changelog'));
 
-    // Original version content should be preserved
     assert.ok(finalContent.includes('First release with'));
     assert.ok(finalContent.includes('Feature A'));
     assert.ok(finalContent.includes('Feature B'));

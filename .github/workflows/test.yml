@@ -34,7 +34,6 @@ jobs:
       fail-fast: false
       matrix:
         scenario:
-          # Happy path scenarios
           - name: "valid-release"
             description: "Test successful release flow"
             setup: |
@@ -79,8 +78,6 @@ jobs:
               package-name: test-package
               changelog: test-env/CHANGES.md
             expect-success: true
-
-          # Error scenarios
 
           - name: "invalid-opam"
             description: "Test with invalid opam file"
@@ -139,32 +136,25 @@ jobs:
 
       - name: Create test environment
         run: |
-          # Create a temporary test directory
           mkdir -p test-env
           cd test-env
 
-          # Initialize git repo (needed for dune-release)
           git init
           git config user.name "Test User"
           git config user.email "test@example.com"
 
-          # Run scenario setup
           ${{ matrix.scenario.setup }}
 
-          # Create initial commit and tag (needed for release action)
           git add -A || true
           git commit -m "Initial test commit" || echo "No files to commit"
           git tag 0.1.0
 
-          # Copy test files to repo root for the action to find
           cd ..
           cp -r test-env/*.opam . 2>/dev/null || true
 
-          # Create a fake dune-release executable for testing
           mkdir -p .test-bin
           cat > .test-bin/dune-release << 'EOF'
           #!/bin/bash
-          # Mock dune-release for testing
           case "$1" in
             lint)
               if [[ -f test-package.opam ]] && grep -q "opam-version" test-package.opam; then
@@ -189,18 +179,15 @@ jobs:
           EOF
           chmod +x .test-bin/dune-release
 
-          # Add mock to PATH
           echo "PATH=$PWD/.test-bin:$PATH" >> $GITHUB_ENV
 
       - name: Setup OCaml (mock)
         run: |
-          # Create mock opam for testing
           cat > $PWD/.test-bin/opam << 'EOF'
           #!/bin/bash
-          # Handle 'opam exec -- command args...'
           if [[ "$1" == "exec" ]] && [[ "$2" == "--" ]]; then
-            shift 2  # Remove 'exec --'
-            exec "$@"  # Execute the actual command
+            shift 2
+            exec "$@"
           else
             echo "Mock opam: $@"
             exit 0
@@ -245,14 +232,12 @@ jobs:
         if: matrix.scenario.expect-outputs
         run: |
           echo "Checking outputs..."
-          # Would check outputs here if they were set by the action
           echo "✅ Output validation (placeholder)"
 
       - name: Check error message
         if: matrix.scenario.expect-error && steps.test-action.outcome == 'failure'
         run: |
           echo "Checking for expected error keyword: ${{ matrix.scenario.expect-error }}"
-          # In a real test, we'd capture and check the error output
           echo "✅ Error validation (placeholder)"
 
   lint-integration-tests:
